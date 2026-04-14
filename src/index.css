@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme {
+    --font-poppins: "Poppins", sans-serif;
+    --color-primary-bg: #fff2f2;
+    --color-secondary-bg: #e5e0ff;
+    --color-accent: #8ea7e9;
+    --color-primary-button: #7286d3;
+    --color-light-gray: #f5f5f5;
+    --color-border: #e5e0ff;
+    --color-text-primary: #2c2c2c;
+    --color-text-secondary: #7a7a7a;
+    --color-text-tertiary: #b0b0b0;
+}
+
+@font-face {
+    font-family: "Poppins";
+    src: url("/font/Poppins-Regular.ttf") format("truetype");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+body {
+    margin: 0;
+    font-family: var(--font-poppins);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--color-primary-bg);
+    color: var(--color-text-primary);
+}
+
+code {
+    font-family:
+        source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+}
