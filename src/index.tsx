@@ -18,6 +18,7 @@ const ApprovalLembur = lazy(() => import("./pages/ApprovalLembur"));
 const Performance = lazy(() => import("./pages/Performance"));
 const Payroll = lazy(() => import("./pages/Payroll"));
 const Recruitment = lazy(() => import("./pages/Recruitment"));
+const ShiftManagement = lazy(() => import("./pages/ShiftManagement"));
 
 const root = document.getElementById("root");
 
@@ -35,6 +36,7 @@ render(
         <Route path="/" component={Dashboard} />
         <Route path="/employee" component={Employee} />
         <Route path="/attendance" component={Attendance} />
+        <Route path="/shift" component={ShiftManagement} />
         <Route path="/approval/cuti" component={ApprovalCuti} />
         <Route path="/approval/lembur" component={ApprovalLembur} />
         <Route path="/performance" component={Performance} />

@@ -10,6 +10,7 @@ import {
   Banknote,
   UserPlus,
   LogOut,
+  CalendarClock,
 } from "lucide-solid";
 import auth from "../store/auth";
 
@@ -17,6 +18,7 @@ const menuItems = [
   { name: "Dashboard", path: "/", icon: LayoutDashboard },
   { name: "Employee", path: "/employee", icon: Users },
   { name: "Attendance", path: "/attendance", icon: Clock },
+  { name: "Shift Management", path: "/shift", icon: CalendarClock },
   { name: "Approval Cuti", path: "/approval/cuti", icon: CalendarOff },
   { name: "Approval Lembur", path: "/approval/lembur", icon: Timer },
   { name: "Performance", path: "/performance", icon: TrendingUp },
