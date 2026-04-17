@@ -2,12 +2,10 @@ import { type Component, For, createSignal, onMount, Show } from "solid-js";
 import {
   Plus,
   Search,
-  Edit2,
   Trash2,
   Calendar,
   Clock,
   MapPin,
-  Users,
   RefreshCw,
   X,
   CheckCircle,
