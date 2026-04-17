@@ -24,7 +24,7 @@ const Employee: Component = () => {
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
-  const BASE_URL = "http://127.0.0.1:8080/api";
+  const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080/api";
 
   const fetchEmployees = async () => {
     setIsLoading(true);
