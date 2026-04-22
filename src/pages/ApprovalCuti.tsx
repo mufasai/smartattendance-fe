@@ -1,6 +1,7 @@
-import { type Component, For, createSignal, onMount } from "solid-js";
+import { type Component, For, createSignal, onMount, Show } from "solid-js";
 import { CheckCircle, XCircle, Search, RefreshCw } from "lucide-solid";
 import auth from "../store/auth";
+import ConfirmModal from "../components/ConfirmModal";
 
 interface LeaveRequest {
   id: string;
@@ -22,6 +23,7 @@ const ApprovalCuti: Component = () => {
   const [requests, setRequests] = createSignal<LeaveRequest[]>([]);
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [confirmAction, setConfirmAction] = createSignal<{ id: string, action: "APPROVED" | "REJECTED" } | null>(null);
 
   const role = auth.role(); // "manager" or "hrd"
   const BASE_URL = "http://127.0.0.1:8080/api";
@@ -53,11 +55,12 @@ const ApprovalCuti: Component = () => {
     fetchLeaves();
   });
 
-  const handleAction = async (id: string, action: "APPROVED" | "REJECTED") => {
-    if (
-      !confirm(`Are you sure you want to ${action.toLowerCase()} this request?`)
-    )
-      return;
+  const handleAction = async () => {
+    const data = confirmAction();
+    if (!data) return;
+
+    const { id, action } = data;
+    setIsLoading(true);
 
     // Line manager = stage 1, HRD = stage 2
     const stage = role === "manager" ? 1 : 2;
@@ -77,13 +80,15 @@ const ApprovalCuti: Component = () => {
 
       const result = await response.json();
       if (response.ok && result.status === "success") {
-        // Refresh data
+        setConfirmAction(null);
         fetchLeaves();
       } else {
         alert(result.message || "Failed to update status");
       }
     } catch (err: any) {
       alert("Error: " + err.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -204,7 +209,7 @@ const ApprovalCuti: Component = () => {
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-[var(--color-border)]">
-              {isLoading() && requests().length === 0 ? (
+              <Show when={isLoading() && requests().length === 0}>
                 <tr>
                   <td
                     colspan="6"
@@ -216,116 +221,117 @@ const ApprovalCuti: Component = () => {
                     </div>
                   </td>
                 </tr>
-              ) : (
-                <For each={filteredRequests()}>
-                  {(req) => (
-                    <tr class="hover:bg-[var(--color-light-gray)]/30 transition-colors">
-                      <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="flex items-center gap-3">
-                          <div class="w-10 h-10 rounded-full bg-[var(--color-secondary-bg)] text-[var(--color-primary-button)] flex items-center justify-center font-bold shadow-inner">
-                            {req.nik.substring(0, 2)}
+              </Show>
+              
+              <For each={filteredRequests()}>
+                {(req) => (
+                  <tr class="hover:bg-[var(--color-light-gray)]/30 transition-colors">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-[var(--color-secondary-bg)] text-[var(--color-primary-button)] flex items-center justify-center font-bold shadow-inner">
+                          {req.nik.substring(0, 2)}
+                        </div>
+                        <div>
+                          <div class="text-sm font-semibold text-[var(--color-text-primary)]">
+                            {req.nik}
                           </div>
-                          <div>
-                            <div class="text-sm font-semibold text-[var(--color-text-primary)]">
-                              {req.nik}
-                            </div>
-                            <div class="text-[10px] text-[var(--color-text-tertiary)] uppercase tracking-wide">
-                              ID: {req.id.substring(0, 8)}...
-                            </div>
+                          <div class="text-[10px] text-[var(--color-text-tertiary)] uppercase tracking-wide">
+                            ID: {req.id.substring(0, 8)}...
                           </div>
                         </div>
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm font-medium text-[var(--color-text-primary)]">
-                          {req.leave_type}
-                        </div>
-                        <div class="text-xs text-[var(--color-primary-button)] font-semibold mt-0.5 bg-[var(--color-secondary-bg)] inline-block px-2 py-0.5 rounded-md">
-                          {req.duration} Days
-                        </div>
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm text-[var(--color-text-primary)]">
-                          {req.start_date}
-                        </div>
-                        <div class="text-xs text-[var(--color-text-tertiary)] flex items-center gap-1 mt-0.5">
-                          to {req.end_date}
-                        </div>
-                      </td>
-                      <td class="px-6 py-4">
-                        <div
-                          class="text-sm text-[var(--color-text-secondary)] line-clamp-2 max-w-[200px]"
-                          title={req.reason}
-                        >
-                          {req.reason}
-                        </div>
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap">
-                        <span
-                          class={`px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full shadow-sm ${getStatusColor(req.status)}`}
-                        >
-                          {req.status}
+                      </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="text-sm font-medium text-[var(--color-text-primary)]">
+                        {req.leave_type}
+                      </div>
+                      <div class="text-xs text-[var(--color-primary-button)] font-semibold mt-0.5 bg-[var(--color-secondary-bg)] inline-block px-2 py-0.5 rounded-md">
+                        {req.duration} Days
+                      </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <div class="text-sm text-[var(--color-text-primary)]">
+                        {req.start_date}
+                      </div>
+                      <div class="text-xs text-[var(--color-text-tertiary)] flex items-center gap-1 mt-0.5">
+                        to {req.end_date}
+                      </div>
+                    </td>
+                    <td class="px-6 py-4">
+                      <div
+                        class="text-sm text-[var(--color-text-secondary)] line-clamp-2 max-w-[200px]"
+                        title={req.reason}
+                      >
+                        {req.reason}
+                      </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <span
+                        class={`px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full shadow-sm ${getStatusColor(req.status)}`}
+                      >
+                        {req.status}
+                      </span>
+                      <div class="text-[10px] text-[var(--color-text-secondary)] mt-2 flex flex-col gap-0.5 bg-[var(--color-light-gray)] p-1.5 rounded-lg border border-[var(--color-border)]">
+                        <span class="flex justify-between w-32">
+                          <span>L1 (Mgr):</span>{" "}
+                          <strong
+                            class={
+                              req.stage1_status === "APPROVED"
+                                ? "text-green-600"
+                                : req.stage1_status === "REJECTED"
+                                  ? "text-red-600"
+                                  : ""
+                            }
+                          >
+                            {req.stage1_status}
+                          </strong>
                         </span>
-                        <div class="text-[10px] text-[var(--color-text-secondary)] mt-2 flex flex-col gap-0.5 bg-[var(--color-light-gray)] p-1.5 rounded-lg border border-[var(--color-border)]">
-                          <span class="flex justify-between w-32">
-                            <span>L1 (Mgr):</span>{" "}
-                            <strong
-                              class={
-                                req.stage1_status === "APPROVED"
-                                  ? "text-green-600"
-                                  : req.stage1_status === "REJECTED"
-                                    ? "text-red-600"
-                                    : ""
-                              }
-                            >
-                              {req.stage1_status}
-                            </strong>
-                          </span>
-                          <span class="flex justify-between w-32">
-                            <span>L2 (HRD):</span>{" "}
-                            <strong
-                              class={
-                                req.stage2_status === "APPROVED"
-                                  ? "text-green-600"
-                                  : req.stage2_status === "REJECTED"
-                                    ? "text-red-600"
-                                    : ""
-                              }
-                            >
-                              {req.stage2_status}
-                            </strong>
-                          </span>
+                        <span class="flex justify-between w-32">
+                          <span>L2 (HRD):</span>{" "}
+                          <strong
+                            class={
+                              req.stage2_status === "APPROVED"
+                                ? "text-green-600"
+                                : req.stage2_status === "REJECTED"
+                                  ? "text-red-600"
+                                  : ""
+                            }
+                          >
+                            {req.stage2_status}
+                          </strong>
+                        </span>
+                      </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      {canAction(req) ? (
+                        <div class="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => setConfirmAction({ id: req.id, action: "APPROVED" })}
+                            class="flex items-center gap-1 text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 px-3 py-1.5 rounded-lg transition-all shadow-sm active:scale-95"
+                            title="Approve"
+                          >
+                            <CheckCircle class="w-4 h-4" />
+                            <span class="text-xs font-bold">Approve</span>
+                          </button>
+                          <button
+                            onClick={() => setConfirmAction({ id: req.id, action: "REJECTED" })}
+                            class="flex items-center gap-1 text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-3 py-1.5 rounded-lg transition-all shadow-sm active:scale-95"
+                            title="Reject"
+                          >
+                            <XCircle class="w-4 h-4" />
+                            <span class="text-xs font-bold">Reject</span>
+                          </button>
                         </div>
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        {canAction(req) ? (
-                          <div class="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => handleAction(req.id, "APPROVED")}
-                              class="flex items-center gap-1 text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 px-3 py-1.5 rounded-lg transition-all shadow-sm active:scale-95"
-                              title="Approve"
-                            >
-                              <CheckCircle class="w-4 h-4" />
-                              <span class="text-xs font-bold">Approve</span>
-                            </button>
-                            <button
-                              onClick={() => handleAction(req.id, "REJECTED")}
-                              class="flex items-center gap-1 text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-3 py-1.5 rounded-lg transition-all shadow-sm active:scale-95"
-                              title="Reject"
-                            >
-                              <XCircle class="w-4 h-4" />
-                              <span class="text-xs font-bold">Reject</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <span class="text-[var(--color-text-tertiary)] text-xs font-medium italic px-3 py-1.5 bg-[var(--color-light-gray)] rounded-lg border border-[var(--color-border)] inline-block">
-                            No Action Needed
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              )}
+                      ) : (
+                        <span class="text-[var(--color-text-tertiary)] text-xs font-medium italic px-3 py-1.5 bg-[var(--color-light-gray)] rounded-lg border border-[var(--color-border)] inline-block">
+                          No Action Needed
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </For>
+
               {!isLoading() && filteredRequests().length === 0 && (
                 <tr>
                   <td
@@ -340,6 +346,20 @@ const ApprovalCuti: Component = () => {
           </table>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={!!confirmAction()}
+        title={confirmAction()?.action === "APPROVED" ? "Setujui Cuti" : "Tolak Cuti"}
+        message={confirmAction()?.action === "APPROVED" 
+          ? "Apakah Anda yakin ingin menyetujui pengajuan cuti ini?" 
+          : "Apakah Anda yakin ingin menolak pengajuan cuti ini? Karyawan akan menerima notifikasi penolakan."}
+        confirmText={confirmAction()?.action === "APPROVED" ? "Setujui" : "Tolak"}
+        cancelText="Kembali"
+        onConfirm={handleAction}
+        onCancel={() => setConfirmAction(null)}
+        variant={confirmAction()?.action === "APPROVED" ? "info" : "danger"}
+        isLoading={isLoading()}
+      />
     </div>
   );
 };
