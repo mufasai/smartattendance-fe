@@ -379,7 +379,6 @@ const Dashboard: Component = () => {
           </div>
           {data.location && (
             <div class="flex flex-col">
-
               {/* Site Performance Comparison */}
               <div class="bg-white rounded-xl shadow-sm border border-[var(--color-border)] p-4">
                 <div class="flex items-center gap-2 mb-4">
@@ -419,7 +418,6 @@ const Dashboard: Component = () => {
                   </For>
                 </div>
               </div>
-
               {/* Incident Distribution by Location */}
               <div class="bg-white rounded-xl shadow-sm border border-[var(--color-border)] p-4 mt-4">
                 <div class="flex items-center gap-2 mb-4">
@@ -450,7 +448,6 @@ const Dashboard: Component = () => {
                   </For>
                 </div>
               </div>
-
             </div>
           )}
         </div>
