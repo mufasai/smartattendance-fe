@@ -12,6 +12,8 @@ import {
   LogOut,
   CalendarClock,
   Shield,
+  Wifi,
+  MapPin,
 } from "lucide-solid";
 import auth from "../store/auth";
 
@@ -21,6 +23,8 @@ const menuItems = [
   { name: "Attendance", path: "/attendance", icon: Clock },
   { name: "Shift Management", path: "/shift", icon: CalendarClock },
   { name: "Patrol", path: "/patrol", icon: Shield },
+  { name: "WiFi Management", path: "/wifi", icon: Wifi },
+  { name: "Location Boundaries", path: "/locations", icon: MapPin },
   { name: "Approval Cuti", path: "/approval/cuti", icon: CalendarOff },
   { name: "Approval Lembur", path: "/approval/lembur", icon: Timer },
   { name: "Performance", path: "/performance", icon: TrendingUp },
