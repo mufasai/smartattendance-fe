@@ -7,7 +7,6 @@ import {
   Clock,
   MapPin,
   RefreshCw,
-  X,
   CheckCircle,
   XCircle,
   AlertCircle,
@@ -17,6 +16,7 @@ import Modal from "../components/ui/Modal";
 import Button from "../components/ui/Button";
 import GroupList, { type Group } from "../components/GroupList";
 import GroupForm from "../components/GroupForm";
+import ConfirmModal from "../components/ConfirmModal";
 
 interface ShiftSchedule {
   id: string;
@@ -61,6 +61,8 @@ const ShiftManagement: Component = () => {
   const [groups, setGroups] = createSignal<Group[]>([]);
   const [showGroupModal, setShowGroupModal] = createSignal(false);
   const [editingGroup, setEditingGroup] = createSignal<Group | null>(null);
+  const [confirmDeleteShift, setConfirmDeleteShift] = createSignal<string | null>(null);
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = createSignal<string | null>(null);
 
   // Form state
   const [formData, setFormData] = createSignal({
@@ -166,8 +168,9 @@ const ShiftManagement: Component = () => {
     }
   };
 
-  const deleteShift = async (shiftId: string) => {
-    if (!confirm("Are you sure you want to delete this shift?")) return;
+  const deleteShift = async () => {
+    const shiftId = confirmDeleteShift();
+    if (!shiftId) return;
 
     setIsLoading(true);
     try {
@@ -178,6 +181,7 @@ const ShiftManagement: Component = () => {
       const result = await response.json();
 
       if (response.ok && result.status === "success") {
+        setConfirmDeleteShift(null);
         fetchShifts();
       } else {
         setError(result.message || "Failed to delete shift");
@@ -217,32 +221,27 @@ const ShiftManagement: Component = () => {
     }
   };
 
-  // --- Group API Methods (Assumed Backend) ---
+  // --- Group API Methods ---
   const fetchGroups = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Assuming GET /api/groups
       const response = await fetch(`${BASE_URL}/groups`);
       const result = await response.json();
 
       if (response.ok && result.status === "success") {
         setGroups(result.data);
       } else {
-        // Fallback for demo if backend not ready
         setGroups([
           { id: "1", name: "Grup A - Shift 1", description: "Terdiri dari petugas senior Gate A.", member_niks: ["2024001", "2024002"] },
           { id: "2", name: "Grup B - Shift 2", description: "Petugas cadangan area parkir.", member_niks: ["2024003"] },
         ]);
-        // setError(result.message || "Gagal mengambil data grup.");
       }
     } catch (err: any) {
-      // Fallback for demo
       setGroups([
         { id: "1", name: "Grup A - Shift 1", description: "Terdiri dari petugas senior Gate A.", member_niks: ["2024001", "2024002"] },
         { id: "2", name: "Grup B - Shift 2", description: "Petugas cadangan area parkir.", member_niks: ["2024003"] },
       ]);
-      console.warn("Backend Groups API not found, using mockup data.");
     } finally {
       setIsLoading(false);
     }
@@ -267,7 +266,6 @@ const ShiftManagement: Component = () => {
       setShowGroupModal(false);
       fetchGroups();
     } catch (err) {
-      // Fallback update local state for demo
       if (editingGroup()) {
         setGroups(groups().map(g => g.id === editingGroup()?.id ? { ...g, ...groupData } : g));
       } else {
@@ -279,13 +277,17 @@ const ShiftManagement: Component = () => {
     }
   };
 
-  const handleDeleteGroup = async (id: string) => {
-    if (!confirm("Hapus grup ini? Anggota grup tidak akan terhapus.")) return;
+  const handleDeleteGroup = async () => {
+    const id = confirmDeleteGroup();
+    if (!id) return;
+    
     try {
       await fetch(`${BASE_URL}/groups/${id}`, { method: "DELETE" });
+      setConfirmDeleteGroup(null);
       fetchGroups();
     } catch (err) {
       setGroups(groups().filter(g => g.id !== id));
+      setConfirmDeleteGroup(null);
     }
   };
 
@@ -303,34 +305,13 @@ const ShiftManagement: Component = () => {
     });
   };
 
-  const addTaskField = () => {
-    setFormData((prev) => ({
-      ...prev,
-      tasks: [...prev.tasks, ""],
-    }));
-  };
-
-  const removeTaskField = (index: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      tasks: prev.tasks.filter((_, i) => i !== index),
-    }));
-  };
-
-  const updateTask = (index: number, value: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      tasks: prev.tasks.map((task, i) => (i === index ? value : task)),
-    }));
-  };
-
   const updateShiftTimes = (shiftType: string) => {
-    const times = {
+    const times: any = {
       PAGI: { start: "06:00", end: "14:00" },
       SIANG: { start: "14:00", end: "22:00" },
       MALAM: { start: "22:00", end: "06:00" },
     };
-    const selected = times[shiftType as keyof typeof times];
+    const selected = times[shiftType];
     setFormData((prev) => ({
       ...prev,
       shift_type: shiftType,
@@ -427,7 +408,6 @@ const ShiftManagement: Component = () => {
       </div>
 
       <Show when={activeTab() === "shifts"}>
-        {/* Shifts Content (Existing) */}
         <div class="space-y-6">
           <div class="bg-white p-4 rounded-2xl shadow-sm border border-[var(--color-border)] space-y-4">
             <div class="flex flex-col lg:flex-row gap-4">
@@ -494,11 +474,13 @@ const ShiftManagement: Component = () => {
                     <div class="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]"><MapPin class="w-4 h-4" />{shift.location}</div>
                   </div>
                   <div class="flex gap-2 mt-4 pt-4 border-t border-[var(--color-border)]">
-                    {shift.status === "SCHEDULED" && (
-                      <><Button size="sm" variant="success" class="flex-1 text-xs" onClick={() => updateShiftStatus(shift.id, "COMPLETED")}>Complete</Button>
-                      <Button size="sm" variant="danger" class="flex-1 text-xs" onClick={() => updateShiftStatus(shift.id, "CANCELLED")}>Cancel</Button></>
-                    )}
-                    <button onClick={() => deleteShift(shift.id)} class="text-red-500 p-2"><Trash2 class="w-4 h-4" /></button>
+                    <Show when={shift.status === "SCHEDULED"}>
+                      <Button size="sm" variant="success" class="flex-1 text-xs" onClick={() => updateShiftStatus(shift.id, "COMPLETED")}>Complete</Button>
+                      <Button size="sm" variant="danger" class="flex-1 text-xs" onClick={() => updateShiftStatus(shift.id, "CANCELLED")}>Cancel</Button>
+                    </Show>
+                    <button onClick={() => setConfirmDeleteShift(shift.id)} class="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors">
+                      <Trash2 class="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               )}
@@ -508,7 +490,6 @@ const ShiftManagement: Component = () => {
       </Show>
 
       <Show when={activeTab() === "groups"}>
-        {/* Groups Content (New) */}
         <div class="space-y-6">
            <div class="bg-white p-5 rounded-2xl shadow-sm border border-[var(--color-border)]">
               <div class="flex items-center gap-3">
@@ -526,7 +507,7 @@ const ShiftManagement: Component = () => {
             groups={groups()} 
             isLoading={isLoading()} 
             onEdit={(g) => { setEditingGroup(g); setShowGroupModal(true); }} 
-            onDelete={handleDeleteGroup} 
+            onDelete={(id) => setConfirmDeleteGroup(id)} 
            />
         </div>
       </Show>
@@ -559,7 +540,7 @@ const ShiftManagement: Component = () => {
           </div>
           <div class="flex gap-3 pt-6 border-t border-[var(--color-border)]">
              <Button class="flex-1" variant="ghost" onClick={() => setShowAddModal(false)}>Batal</Button>
-             <Button class="flex-1" loading={isLoading()} onClick={createShift}>Create Shift</Button>
+             <Button class="flex-1" onClick={createShift}>Create Shift</Button>
           </div>
         </div>
       </Modal>
@@ -578,6 +559,27 @@ const ShiftManagement: Component = () => {
           isLoading={isLoading()} 
         />
       </Modal>
+
+      {/* Confirm Modals */}
+      <ConfirmModal
+        isOpen={!!confirmDeleteShift()}
+        title="Hapus Jadwal Shift"
+        message="Apakah Anda yakin ingin menghapus jadwal shift ini? Tindakan ini tidak dapat dibatalkan."
+        onConfirm={deleteShift}
+        onCancel={() => setConfirmDeleteShift(null)}
+        variant="danger"
+        isLoading={isLoading()}
+      />
+
+      <ConfirmModal
+        isOpen={!!confirmDeleteGroup()}
+        title="Hapus Grup"
+        message="Hapus grup ini? Anggota grup tidak akan terhapus, namun relasi grup akan hilang selamanya."
+        onConfirm={handleDeleteGroup}
+        onCancel={() => setConfirmDeleteGroup(null)}
+        variant="danger"
+        isLoading={isLoading()}
+      />
 
       {error() && (
         <div class="fixed bottom-6 right-6 bg-red-50 text-red-600 p-4 rounded-xl text-sm border border-red-200 shadow-lg animate-in slide-in-from-bottom-5">
