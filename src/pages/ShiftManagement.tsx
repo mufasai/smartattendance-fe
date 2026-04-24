@@ -173,15 +173,7 @@ const ShiftManagement: Component = () => {
   const fetchEmployeeGroups = async () => {
     try {
       // Mock data for now - replace with actual API call
-      setEmployeeGroups([
-        {
-          id: "1",
-          name: "Group 1",
-          description: "Tim keamanan utama",
-          employees: [],
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      setEmployeeGroups([]);
     } catch (err: any) {
       console.error("Failed to fetch employee groups:", err);
     }
@@ -235,9 +227,28 @@ const ShiftManagement: Component = () => {
           full_name: item.full_name,
         }));
         setEmployees(mappedData);
+      } else {
+        // If API fails, use dummy data for testing
+        setEmployees([
+          { id: "1", nik: "001", full_name: "Agus Santoso" },
+          { id: "2", nik: "002", full_name: "Budi Prasetyo" },
+          { id: "3", nik: "003", full_name: "Catur Wibowo" },
+          { id: "4", nik: "004", full_name: "Dodik Setiawan" },
+          { id: "5", nik: "005", full_name: "Eko Susanto" },
+          { id: "6", nik: "006", full_name: "Fajar Rahman" },
+        ]);
       }
     } catch (err: any) {
       console.error("Failed to fetch employees:", err);
+      // If network error, use dummy data for testing
+      setEmployees([
+        { id: "1", nik: "001", full_name: "Agus Santoso" },
+        { id: "2", nik: "002", full_name: "Budi Prasetyo" },
+        { id: "3", nik: "003", full_name: "Catur Wibowo" },
+        { id: "4", nik: "004", full_name: "Dodik Setiawan" },
+        { id: "5", nik: "005", full_name: "Eko Susanto" },
+        { id: "6", nik: "006", full_name: "Fajar Rahman" },
+      ]);
     }
   };
 
@@ -283,8 +294,8 @@ const ShiftManagement: Component = () => {
 
   const createEmployeeGroup = async () => {
     const data = groupForm();
-    if (!data.name || data.employee_ids.length === 0) {
-      setError("Please fill all required fields and select at least one employee");
+    if (!data.name) {
+      setError("Please fill group name");
       return;
     }
 
@@ -292,16 +303,11 @@ const ShiftManagement: Component = () => {
     setError(null);
 
     try {
-      // Mock creation - replace with actual API call
-      const selectedEmployees = employees().filter(emp =>
-        data.employee_ids.includes(emp.id)
-      );
-
       const newGroup: EmployeeGroup = {
         id: Date.now().toString(),
         name: data.name,
         description: data.description,
-        employees: selectedEmployees,
+        employees: [], // Start with empty employees
         created_at: new Date().toISOString(),
       };
 
@@ -574,6 +580,17 @@ const ShiftManagement: Component = () => {
         ? prev.employee_ids.filter(id => id !== employeeId)
         : [...prev.employee_ids, employeeId]
     }));
+  };
+
+  const getUnassignedEmployees = () => {
+    const assignedEmployeeIds = new Set();
+    employeeGroups().forEach(group => {
+      group.employees.forEach(emp => {
+        assignedEmployeeIds.add(emp.id);
+      });
+    });
+
+    return employees().filter(emp => !assignedEmployeeIds.has(emp.id));
   };
 
   const filteredShifts = () =>
@@ -967,7 +984,7 @@ const ShiftManagement: Component = () => {
             <div>
               <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Employee Groups</h3>
               <p class="text-sm text-[var(--color-text-secondary)]">
-                Create groups of employees for easier shift assignment
+                Create groups and drag employees to assign them
               </p>
             </div>
             <button
@@ -979,70 +996,192 @@ const ShiftManagement: Component = () => {
             </button>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <For each={employeeGroups()}>
-              {(group) => (
-                <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-5 hover:shadow-md transition-all">
-                  <div class="flex justify-between items-start mb-4">
-                    <div class="flex items-center gap-2">
-                      <Users class="w-5 h-5 text-[var(--color-primary-button)]" />
-                      <h4 class="font-semibold text-[var(--color-text-primary)]">{group.name}</h4>
-                    </div>
-                    <button
-                      onClick={() => deleteEmployeeGroup(group.id)}
-                      class="text-red-600 hover:bg-red-50 p-1 rounded"
+          {/* Two Column Layout */}
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-[500px]">
+            {/* Left Column - Groups */}
+            <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h4 class="text-lg font-semibold text-[var(--color-text-primary)]">Groups</h4>
+                <span class="text-sm text-[var(--color-text-secondary)]">
+                  {employeeGroups().length} groups
+                </span>
+              </div>
+
+              <div class="space-y-3">
+                <For each={employeeGroups()}>
+                  {(group) => (
+                    <div
+                      class="bg-blue-500 text-white rounded-lg p-4 min-h-[120px] relative group hover:bg-blue-600 transition-colors"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.add('bg-blue-400');
+                      }}
+                      onDragLeave={(e) => {
+                        e.currentTarget.classList.remove('bg-blue-400');
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.remove('bg-blue-400');
+                        const employeeId = e.dataTransfer?.getData('text/plain');
+                        if (employeeId) {
+                          const employee = employees().find(emp => emp.id === employeeId);
+                          if (employee && !group.employees.some(emp => emp.id === employeeId)) {
+                            // Add employee to group
+                            setEmployeeGroups(prev => prev.map(g =>
+                              g.id === group.id
+                                ? { ...g, employees: [...g.employees, employee] }
+                                : g
+                            ));
+                          }
+                        }
+                      }}
                     >
-                      <Trash2 class="w-4 h-4" />
-                    </button>
-                  </div>
+                      <div class="flex justify-between items-start mb-3">
+                        <h5 class="font-semibold text-lg">{group.name}</h5>
+                        <button
+                          onClick={() => {
+                            if (confirm("Are you sure you want to delete this group?")) {
+                              setEmployeeGroups(prev => prev.filter(g => g.id !== group.id));
+                            }
+                          }}
+                          class="opacity-0 group-hover:opacity-100 text-white hover:text-red-200 transition-opacity"
+                        >
+                          <Trash2 class="w-4 h-4" />
+                        </button>
+                      </div>
 
-                  <div class="space-y-3">
-                    {group.description && (
-                      <p class="text-sm text-[var(--color-text-secondary)]">
-                        {group.description}
-                      </p>
-                    )}
-
-                    <div class="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-                      <Users class="w-4 h-4" />
-                      <span>{group.employees.length} employees</span>
-                    </div>
-
-                    {group.employees.length > 0 && (
-                      <div class="pt-2 border-t border-[var(--color-border)]">
-                        <div class="text-xs font-semibold text-[var(--color-text-secondary)] mb-2">
-                          Members:
-                        </div>
-                        <div class="space-y-1">
-                          <For each={group.employees.slice(0, 3)}>
-                            {(employee) => (
-                              <div class="text-xs text-[var(--color-text-secondary)]">
-                                • {employee.full_name} ({employee.nik})
-                              </div>
-                            )}
-                          </For>
-                          {group.employees.length > 3 && (
-                            <div class="text-xs text-[var(--color-primary-button)] font-medium">
-                              +{group.employees.length - 3} more
+                      <div class="space-y-2">
+                        <For each={group.employees}>
+                          {(employee) => (
+                            <div
+                              class="bg-white/20 rounded px-3 py-1 text-sm flex justify-between items-center cursor-move"
+                              draggable="true"
+                              onDragStart={(e) => {
+                                e.dataTransfer?.setData('text/plain', employee.id);
+                                e.dataTransfer?.setData('source', 'group');
+                                e.dataTransfer?.setData('groupId', group.id);
+                              }}
+                            >
+                              <span>{employee.full_name}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Remove employee from group
+                                  setEmployeeGroups(prev => prev.map(g =>
+                                    g.id === group.id
+                                      ? { ...g, employees: g.employees.filter(emp => emp.id !== employee.id) }
+                                      : g
+                                  ));
+                                }}
+                                class="text-white/70 hover:text-white"
+                              >
+                                <X class="w-3 h-3" />
+                              </button>
                             </div>
                           )}
+                        </For>
+
+                        {group.employees.length === 0 && (
+                          <div class="text-white/60 text-sm italic text-center py-4 border-2 border-dashed border-white/30 rounded">
+                            Drag employees here
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </For>
+
+                {employeeGroups().length === 0 && (
+                  <div class="text-center py-12 text-[var(--color-text-secondary)]">
+                    <Users class="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>No groups created yet.</p>
+                    <p class="text-sm">Create your first group to get started.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column - Available Employees */}
+            <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h4 class="text-lg font-semibold text-[var(--color-text-primary)]">Available Employees</h4>
+                <span class="text-sm text-[var(--color-text-secondary)]">
+                  {getUnassignedEmployees().length} unassigned
+                </span>
+              </div>
+
+              <div class="space-y-2 max-h-[400px] overflow-y-auto">
+                <For each={getUnassignedEmployees()}>
+                  {(employee) => (
+                    <div
+                      class="bg-gray-50 border border-gray-200 rounded-lg p-3 cursor-move hover:bg-gray-100 transition-colors flex items-center justify-between"
+                      draggable="true"
+                      onDragStart={(e) => {
+                        e.dataTransfer?.setData('text/plain', employee.id);
+                        e.dataTransfer?.setData('source', 'available');
+                      }}
+                    >
+                      <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                          <Users class="w-4 h-4 text-blue-600" />
+                        </div>
+                        <div>
+                          <div class="font-medium text-[var(--color-text-primary)]">
+                            {employee.full_name}
+                          </div>
+                          <div class="text-xs text-[var(--color-text-secondary)]">
+                            NIK: {employee.nik}
+                          </div>
                         </div>
                       </div>
-                    )}
-
-                    <div class="text-xs text-[var(--color-text-tertiary)]">
-                      Created: {new Date(group.created_at).toLocaleDateString("id-ID")}
+                      <div class="text-gray-400">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                        </svg>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
-            </For>
+                  )}
+                </For>
 
-            {employeeGroups().length === 0 && (
-              <div class="col-span-full text-center py-12 text-[var(--color-text-secondary)]">
-                No employee groups created yet. Create your first group to get started.
+                {getUnassignedEmployees().length === 0 && (
+                  <div class="text-center py-12 text-[var(--color-text-secondary)]">
+                    <CheckCircle class="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>All employees are assigned to groups!</p>
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* Drop zone for removing from groups */}
+              <div
+                class="mt-4 p-4 border-2 border-dashed border-gray-300 rounded-lg text-center text-gray-500 hover:border-red-300 hover:text-red-500 transition-colors"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.add('border-red-400', 'bg-red-50');
+                }}
+                onDragLeave={(e) => {
+                  e.currentTarget.classList.remove('border-red-400', 'bg-red-50');
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.remove('border-red-400', 'bg-red-50');
+                  const employeeId = e.dataTransfer?.getData('text/plain');
+                  const source = e.dataTransfer?.getData('source');
+                  const groupId = e.dataTransfer?.getData('groupId');
+
+                  if (employeeId && source === 'group' && groupId) {
+                    // Remove employee from group
+                    setEmployeeGroups(prev => prev.map(g =>
+                      g.id === groupId
+                        ? { ...g, employees: g.employees.filter(emp => emp.id !== employeeId) }
+                        : g
+                    ));
+                  }
+                }}
+              >
+                <Trash2 class="w-6 h-6 mx-auto mb-2" />
+                <p class="text-sm">Drop here to remove from group</p>
+              </div>
+            </div>
           </div>
         </div>
       </Show>
@@ -1331,7 +1470,7 @@ const ShiftManagement: Component = () => {
                 <input
                   type="text"
                   class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                  placeholder="e.g., Group 1, Team Alpha"
+                  placeholder="e.g., Group A, Team Alpha"
                   value={groupForm().name}
                   onInput={(e) =>
                     setGroupForm((prev) => ({ ...prev, name: e.currentTarget.value }))
@@ -1354,40 +1493,14 @@ const ShiftManagement: Component = () => {
                 />
               </div>
 
-              <div>
-                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                  Select Employees *
-                </label>
-                <div class="border border-[var(--color-border)] rounded-xl p-4 max-h-60 overflow-y-auto space-y-2">
-                  <For each={employees()}>
-                    {(employee) => (
-                      <label class="flex items-center gap-3 p-2 hover:bg-[var(--color-light-gray)] rounded-lg cursor-pointer">
-                        <input
-                          type="checkbox"
-                          class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-[var(--color-accent)]"
-                          checked={groupForm().employee_ids.includes(employee.id)}
-                          onChange={() => toggleEmployeeInGroup(employee.id)}
-                        />
-                        <div class="flex-1">
-                          <div class="text-sm font-medium text-[var(--color-text-primary)]">
-                            {employee.full_name}
-                          </div>
-                          <div class="text-xs text-[var(--color-text-secondary)]">
-                            NIK: {employee.nik}
-                          </div>
-                        </div>
-                      </label>
-                    )}
-                  </For>
-                  {employees().length === 0 && (
-                    <div class="text-center py-4 text-[var(--color-text-secondary)]">
-                      No employees available
-                    </div>
-                  )}
+              <div class="bg-blue-50 p-4 rounded-xl">
+                <div class="flex items-center gap-2 text-blue-700 mb-2">
+                  <Users class="w-4 h-4" />
+                  <span class="text-sm font-medium">How to add employees:</span>
                 </div>
-                <div class="text-xs text-[var(--color-text-secondary)] mt-1">
-                  Selected: {groupForm().employee_ids.length} employees
-                </div>
+                <p class="text-sm text-blue-600">
+                  After creating the group, you can drag and drop employees from the "Available Employees" section to assign them to this group.
+                </p>
               </div>
             </div>
 
