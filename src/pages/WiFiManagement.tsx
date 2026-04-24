@@ -52,9 +52,21 @@ const WiFiManagement: Component = () => {
     setError(null);
     try {
       const response = await fetch(`${BASE_URL}/wifi-settings/all`);
-      const result = await response.json();
+      
+      if (!response.ok) {
+        setError(`Server error: ${response.status} ${response.statusText}`);
+        return;
+      }
 
-      if (response.ok && result.success) {
+      const text = await response.text();
+      if (!text) {
+        setError("Empty response from server");
+        return;
+      }
+
+      const result = JSON.parse(text);
+
+      if (result.success) {
         const mappedData = result.data.map((item: any) => ({
           ...item,
           id: item.id?.id?.String || item.id?.id || item.id,
@@ -98,7 +110,8 @@ const WiFiManagement: Component = () => {
         }),
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
 
       if (response.ok && result.success) {
         setSuccess("WiFi berhasil ditambahkan");
@@ -134,7 +147,8 @@ const WiFiManagement: Component = () => {
         }),
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
 
       if (response.ok && result.success) {
         setSuccess("WiFi berhasil diupdate");
@@ -167,7 +181,8 @@ const WiFiManagement: Component = () => {
         }),
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
 
       if (response.ok && result.success) {
         setSuccess(`WiFi ${!currentStatus ? "diaktifkan" : "dinonaktifkan"}`);
@@ -195,7 +210,8 @@ const WiFiManagement: Component = () => {
         method: "DELETE",
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
 
       if (response.ok && result.success) {
         setSuccess("WiFi berhasil dihapus");
