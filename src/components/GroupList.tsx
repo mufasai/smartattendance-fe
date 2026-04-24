@@ -1,6 +1,5 @@
 import { type Component, For } from "solid-js";
-import { Edit2, Trash2, Users, MoreVertical } from "lucide-solid";
-import Button from "./ui/Button";
+import { Edit2, Trash2, Users } from "lucide-solid";
 
 export interface Group {
   id: string;
@@ -27,21 +26,21 @@ const GroupList: Component<GroupListProps> = (props) => {
         <For each={props.groups}>
           {(group) => (
             <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-6 hover:shadow-md transition-all group relative overflow-hidden">
-               {/* Accent decoration */}
+              {/* Accent decoration */}
               <div class="absolute top-0 right-0 w-24 h-24 bg-[var(--color-primary-bg)] rounded-bl-full -mr-8 -mt-8 opacity-50 group-hover:bg-[var(--color-secondary-bg)] transition-colors" />
-              
+
               <div class="relative z-10 flex justify-between items-start mb-4">
                 <div class="w-12 h-12 rounded-2xl bg-[var(--color-secondary-bg)] text-[var(--color-primary-button)] flex items-center justify-center shadow-inner">
                   <Users class="w-6 h-6" />
                 </div>
                 <div class="flex gap-1">
-                  <button 
+                  <button
                     onClick={() => props.onEdit(group)}
                     class="p-2 text-[var(--color-text-secondary)] hover:text-[var(--color-primary-button)] hover:bg-[var(--color-secondary-bg)] rounded-xl transition-all"
                   >
                     <Edit2 class="w-4 h-4" />
                   </button>
-                  <button 
+                  <button
                     onClick={() => props.onDelete(group.id)}
                     class="p-2 text-[var(--color-text-secondary)] hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                   >
@@ -67,7 +66,7 @@ const GroupList: Component<GroupListProps> = (props) => {
                       {group.member_niks.length} Karyawan
                     </span>
                   </div>
-                  
+
                   <div class="flex -space-x-2">
                     <For each={group.member_niks.slice(0, 3)}>
                       {() => (
@@ -88,7 +87,7 @@ const GroupList: Component<GroupListProps> = (props) => {
           )}
         </For>
       )}
-      
+
       {!props.isLoading && props.groups.length === 0 && (
         <div class="col-span-full py-20 text-center bg-white rounded-3xl border-2 border-dashed border-[var(--color-border)]">
           <Users class="w-12 h-12 text-[var(--color-text-tertiary)] mx-auto mb-4" />

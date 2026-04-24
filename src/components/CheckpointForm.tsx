@@ -1,7 +1,7 @@
-import { type Component, createSignal, onMount } from "solid-js";
+import { type Component, createSignal } from "solid-js";
 import Input from "./ui/Input";
 import Button from "./ui/Button";
-import { Save, Trash2, MapPin } from "lucide-solid";
+import { Save, MapPin } from "lucide-solid";
 
 export interface Checkpoint {
   id: string;
@@ -96,17 +96,17 @@ const CheckpointForm: Component<CheckpointFormProps> = (props) => {
       </div>
 
       <div class="flex gap-3 pt-2">
-        <Button 
-          type="button" 
-          variant="ghost" 
-          class="flex-1" 
+        <Button
+          type="button"
+          variant="ghost"
+          class="flex-1"
           onClick={props.onCancel}
         >
           Batal
         </Button>
-        <Button 
-          type="submit" 
-          variant="primary" 
+        <Button
+          type="submit"
+          variant="primary"
           class="flex-1 shadow-md shadow-[var(--color-primary-button)]/20"
         >
           <Save class="w-4 h-4" />
