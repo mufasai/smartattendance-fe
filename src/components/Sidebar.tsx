@@ -7,8 +7,6 @@ import {
   CalendarOff,
   Timer,
   TrendingUp,
-  Banknote,
-  UserPlus,
   LogOut,
   CalendarClock,
   Shield,
