@@ -57,9 +57,13 @@ interface ActivePatrol {
 
 const BASE_URL = "http://127.0.0.1:8080/api";
 
-/** Extract string ID from SurrealDB Thing format */
-const extractId = (raw: any): string =>
-  raw?.id?.String ?? raw?.id ?? raw ?? "";
+/** Extract string ID from SurrealDB Thing format (returns only the ID part) */
+const extractId = (raw: any): string => {
+  if (!raw) return "";
+  const str = typeof raw === "string" ? raw : (raw?.id?.String ?? raw?.id ?? String(raw));
+  if (str.includes(":")) return str.split(":")[1];
+  return str;
+};
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -366,12 +370,22 @@ const Patrol: Component = () => {
   };
 
   const getAssigneeName = (type: string, id: string) => {
+    if (!id) return "N/A";
+    const cleanId = extractId(id).toLowerCase();
+    
     if (type === "group") {
-      const g = groups().find((x) => x.id === id);
-      return g ? g.name : `Grup ID: ${id}`;
+      const g = groups().find((x) => extractId(x.id).toLowerCase() === cleanId || x.name.toLowerCase() === cleanId);
+      return g ? g.name : `Grup: ${extractId(id)}`;
     }
-    const emp = employees().find((e) => e.id === id);
-    return emp ? emp.full_name : `Karyawan ID: ${id}`;
+    
+    // Try to find by ID part or by NIK just in case
+    const emp = employees().find((e) => {
+      const eId = extractId(e.id).toLowerCase();
+      const eNik = e.nik?.toLowerCase();
+      return eId === cleanId || eNik === cleanId;
+    });
+    
+    return emp ? emp.full_name : (type === "group" ? `Grup: ${extractId(id)}` : `Karyawan: ${extractId(id)}`);
   };
 
   // ─── Computed ─────────────────────────────────────────────────────────────
@@ -690,6 +704,11 @@ const Patrol: Component = () => {
               History Selesai
             </h3>
             <div class="space-y-2 max-h-[170px] overflow-y-auto custom-scrollbar">
+              <Show when={assignments().filter(a => a.status === "completed").length === 0}>
+                 <div class="py-10 text-center border border-dashed border-[var(--color-border)] rounded-2xl bg-white/20">
+                   <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Belum ada riwayat patroli</p>
+                 </div>
+              </Show>
               <For each={assignments().filter(a => a.status === "completed")}>
                 {(a) => (
                   <div class="p-3 rounded-2xl bg-white/40 border border-[var(--color-border)] flex items-center justify-between">
