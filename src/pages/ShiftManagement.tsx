@@ -14,6 +14,7 @@ import {
   Users,
   Settings,
   UserPlus,
+  Edit,
 } from "lucide-solid";
 
 interface ShiftType {
@@ -272,7 +273,6 @@ const ShiftManagement: Component = () => {
     setError(null);
 
     try {
-      // Mock creation - replace with actual API call
       const newShiftType: ShiftType = {
         id: Date.now().toString(),
         name: data.name,
@@ -284,6 +284,41 @@ const ShiftManagement: Component = () => {
 
       setShiftTypes(prev => [...prev, newShiftType]);
       setShowAddShiftTypeModal(false);
+      resetShiftTypeForm();
+    } catch (err: any) {
+      setError(err.message || "Network error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const editShiftType = async () => {
+    const data = shiftTypeForm();
+    const editing = editingShiftType();
+
+    if (!data.name || !data.start_time || !data.end_time || !editing) {
+      setError("Please fill all required fields");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const updatedShiftType: ShiftType = {
+        ...editing,
+        name: data.name,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        description: data.description,
+      };
+
+      setShiftTypes(prev => prev.map(st =>
+        st.id === editing.id ? updatedShiftType : st
+      ));
+
+      setShowEditShiftTypeModal(false);
+      setEditingShiftType(null);
       resetShiftTypeForm();
     } catch (err: any) {
       setError(err.message || "Network error");
@@ -332,7 +367,6 @@ const ShiftManagement: Component = () => {
     setError(null);
 
     try {
-      // Mock assignment - replace with actual API call
       const group = employeeGroups().find(g => g.id === data.group_id);
       const shiftType = shiftTypes().find(st => st.id === data.shift_type_id);
 
@@ -451,6 +485,7 @@ const ShiftManagement: Component = () => {
       notes: "",
     });
   };
+
   // Delete and update functions
   const deleteShift = async (shiftId: string) => {
     if (!confirm("Are you sure you want to delete this shift?")) return;
@@ -479,12 +514,6 @@ const ShiftManagement: Component = () => {
     if (!confirm("Are you sure you want to delete this shift type?")) return;
 
     setShiftTypes(prev => prev.filter(st => st.id !== shiftTypeId));
-  };
-
-  const deleteEmployeeGroup = async (groupId: string) => {
-    if (!confirm("Are you sure you want to delete this employee group?")) return;
-
-    setEmployeeGroups(prev => prev.filter(g => g.id !== groupId));
   };
 
   const updateShiftStatus = async (shiftId: string, status: string) => {
@@ -558,30 +587,6 @@ const ShiftManagement: Component = () => {
     }));
   };
 
-  const updateShiftTimes = (shiftType: string) => {
-    const times = {
-      PAGI: { start: "06:00", end: "14:00" },
-      SIANG: { start: "14:00", end: "22:00" },
-      MALAM: { start: "22:00", end: "06:00" },
-    };
-    const selected = times[shiftType as keyof typeof times];
-    setFormData((prev) => ({
-      ...prev,
-      shift_type: shiftType,
-      start_time: selected.start,
-      end_time: selected.end,
-    }));
-  };
-
-  const toggleEmployeeInGroup = (employeeId: string) => {
-    setGroupForm(prev => ({
-      ...prev,
-      employee_ids: prev.employee_ids.includes(employeeId)
-        ? prev.employee_ids.filter(id => id !== employeeId)
-        : [...prev.employee_ids, employeeId]
-    }));
-  };
-
   const getUnassignedEmployees = () => {
     const assignedEmployeeIds = new Set();
     employeeGroups().forEach(group => {
@@ -616,12 +621,15 @@ const ShiftManagement: Component = () => {
     switch (type) {
       case "PAGI":
       case "Pagi":
+      case "Shift 1":
         return "bg-orange-100 text-orange-800 border-orange-200";
       case "SIANG":
       case "Siang":
+      case "Shift 2":
         return "bg-blue-100 text-blue-800 border-blue-200";
       case "MALAM":
       case "Malam":
+      case "Shift 3":
         return "bg-purple-100 text-purple-800 border-purple-200";
       default:
         return "bg-gray-100 text-gray-800 border-gray-200";
@@ -652,6 +660,47 @@ const ShiftManagement: Component = () => {
       default:
         return null;
     }
+  };
+
+  // Drag and drop functions for employee groups
+  const [draggedEmployee, setDraggedEmployee] = createSignal<Employee | null>(null);
+
+  const handleDragStart = (employee: Employee) => {
+    setDraggedEmployee(employee);
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (groupId: string) => {
+    const employee = draggedEmployee();
+    if (!employee) return;
+
+    // Add employee to the group
+    setEmployeeGroups(prev => prev.map(group => {
+      if (group.id === groupId) {
+        return {
+          ...group,
+          employees: [...group.employees, employee]
+        };
+      }
+      return group;
+    }));
+
+    setDraggedEmployee(null);
+  };
+
+  const removeEmployeeFromGroup = (groupId: string, employeeId: string) => {
+    setEmployeeGroups(prev => prev.map(group => {
+      if (group.id === groupId) {
+        return {
+          ...group,
+          employees: group.employees.filter(emp => emp.id !== employeeId)
+        };
+      }
+      return group;
+    }));
   };
 
   return (
@@ -734,58 +783,57 @@ const ShiftManagement: Component = () => {
           {error()}
         </div>
       )}
-      {/* Active Shifts Tab */}
+
+      {/* Tab Content */}
       <Show when={activeTab() === "shifts"}>
-        <div class="space-y-4">
-          {/* Filters & Search */}
-          <div class="bg-white p-4 rounded-2xl shadow-sm border border-[var(--color-border)] space-y-4">
+        <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)]">
+          {/* Filters and Search */}
+          <div class="p-6 border-b border-[var(--color-border)]">
             <div class="flex flex-col lg:flex-row gap-4">
-              <div class="relative flex-1">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Search class="h-5 w-5 text-[var(--color-text-tertiary)]" />
+              <div class="flex-1">
+                <div class="relative">
+                  <Search class="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-text-secondary)] w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="Search by employee name, NIK, or location..."
+                    value={searchTerm()}
+                    onInput={(e) => setSearchTerm(e.currentTarget.value)}
+                    class="w-full pl-10 pr-4 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)] focus:border-transparent"
+                  />
                 </div>
-                <input
-                  type="text"
-                  class="block w-full pl-10 pr-3 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-[var(--color-light-gray)]/50 text-sm transition-all"
-                  placeholder="Search by employee name, NIK, or location..."
-                  value={searchTerm()}
-                  onInput={(e) => setSearchTerm(e.currentTarget.value)}
-                />
               </div>
-
-              <div class="flex gap-2 flex-wrap">
-                <input
-                  type="date"
-                  class="block pl-4 pr-4 py-2.5 text-sm border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-[var(--color-text-primary)] font-medium"
-                  value={filterDate()}
-                  onInput={(e) => setFilterDate(e.currentTarget.value)}
-                />
-
+              <div class="flex gap-2">
                 <select
-                  class="block pl-4 pr-10 py-2.5 text-sm border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-[var(--color-text-primary)] font-medium"
                   value={filterShiftType()}
                   onChange={(e) => setFilterShiftType(e.currentTarget.value)}
+                  class="px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                 >
-                  <option value="all">All Shifts</option>
-                  <option value="PAGI">Pagi (06:00-14:00)</option>
-                  <option value="SIANG">Siang (14:00-22:00)</option>
-                  <option value="MALAM">Malam (22:00-06:00)</option>
+                  <option value="all">All Shift Types</option>
+                  <For each={shiftTypes()}>
+                    {(shiftType) => (
+                      <option value={shiftType.name}>{shiftType.name}</option>
+                    )}
+                  </For>
                 </select>
-
                 <select
-                  class="block pl-4 pr-10 py-2.5 text-sm border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-[var(--color-text-primary)] font-medium"
                   value={filterStatus()}
                   onChange={(e) => setFilterStatus(e.currentTarget.value)}
+                  class="px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                 >
                   <option value="all">All Status</option>
                   <option value="SCHEDULED">Scheduled</option>
                   <option value="COMPLETED">Completed</option>
                   <option value="CANCELLED">Cancelled</option>
                 </select>
-
+                <input
+                  type="date"
+                  value={filterDate()}
+                  onChange={(e) => setFilterDate(e.currentTarget.value)}
+                  class="px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                />
                 <button
                   onClick={() => setShowAddShiftModal(true)}
-                  class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-all shadow-sm font-medium"
+                  class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
                 >
                   <Plus class="w-4 h-4" />
                   Add Individual Shift
@@ -794,392 +842,296 @@ const ShiftManagement: Component = () => {
             </div>
           </div>
 
-          {/* Shifts Grid */}
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {isLoading() && shifts().length === 0 ? (
-              <div class="col-span-full flex items-center justify-center py-12">
-                <div class="flex items-center gap-2 text-[var(--color-text-secondary)]">
-                  <RefreshCw class="w-5 h-5 animate-spin text-[var(--color-primary-button)]" />
-                  Loading shifts...
-                </div>
-              </div>
-            ) : (
-              <For each={filteredShifts()}>
-                {(shift) => (
-                  <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-5 hover:shadow-md transition-all">
-                    <div class="flex justify-between items-start mb-4">
-                      <div class="flex gap-2">
-                        <span
-                          class={`px-3 py-1 text-xs font-bold rounded-full border ${getShiftTypeColor(shift.shift_type)}`}
-                        >
+          {/* Shifts Table */}
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <thead class="bg-[var(--color-light-gray)]">
+                <tr>
+                  <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Employee</th>
+                  <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Shift Type</th>
+                  <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Date</th>
+                  <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Time</th>
+                  <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Location</th>
+                  <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Status</th>
+                  <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <Show when={filteredShifts().length === 0}>
+                  <tr>
+                    <td colspan="7" class="text-center p-8 text-[var(--color-text-secondary)]">
+                      <div class="flex flex-col items-center gap-2">
+                        <Calendar class="w-8 h-8 text-[var(--color-text-secondary)]" />
+                        <p>No shifts found</p>
+                      </div>
+                    </td>
+                  </tr>
+                </Show>
+                <For each={filteredShifts()}>
+                  {(shift) => (
+                    <tr class="border-b border-[var(--color-border)] hover:bg-[var(--color-light-gray)] transition-colors">
+                      <td class="p-4">
+                        <div>
+                          <div class="font-medium text-[var(--color-text-primary)]">{shift.employee_name}</div>
+                          <div class="text-sm text-[var(--color-text-secondary)]">NIK: {shift.nik}</div>
+                        </div>
+                      </td>
+                      <td class="p-4">
+                        <span class={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium border ${getShiftTypeColor(shift.shift_type)}`}>
                           {shift.shift_type}
                         </span>
-                        <span
-                          class={`px-3 py-1 text-xs font-bold rounded-full border flex items-center gap-1 ${getStatusColor(shift.status)}`}
-                        >
-                          {getStatusIcon(shift.status)}
-                          {shift.status}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div class="space-y-3">
-                      <div>
-                        <div class="text-lg font-bold text-[var(--color-text-primary)]">
-                          {shift.employee_name}
-                        </div>
-                        <div class="text-xs text-[var(--color-text-secondary)]">
-                          NIK: {shift.nik}
-                        </div>
-                      </div>
-
-                      <div class="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-                        <Calendar class="w-4 h-4" />
-                        <span>{shift.date}</span>
-                      </div>
-
-                      <div class="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-                        <Clock class="w-4 h-4" />
-                        <span>
+                      </td>
+                      <td class="p-4 text-[var(--color-text-primary)]">{shift.date}</td>
+                      <td class="p-4">
+                        <div class="flex items-center gap-1 text-sm text-[var(--color-text-secondary)]">
+                          <Clock class="w-4 h-4" />
                           {shift.start_time} - {shift.end_time}
-                        </span>
-                      </div>
-
-                      <div class="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-                        <MapPin class="w-4 h-4" />
-                        <span class="truncate">{shift.location}</span>
-                      </div>
-
-                      {shift.tasks.length > 0 && (
-                        <div class="pt-2 border-t border-[var(--color-border)]">
-                          <div class="text-xs font-semibold text-[var(--color-text-secondary)] mb-1">
-                            Tasks:
-                          </div>
-                          <ul class="text-xs text-[var(--color-text-secondary)] space-y-1">
-                            <For each={shift.tasks.slice(0, 2)}>
-                              {(task) => <li>• {task}</li>}
-                            </For>
-                            {shift.tasks.length > 2 && (
-                              <li class="text-[var(--color-primary-button)] font-medium">
-                                +{shift.tasks.length - 2} more
-                              </li>
-                            )}
-                          </ul>
                         </div>
-                      )}
-                    </div>
+                      </td>
+                      <td class="p-4">
+                        <div class="flex items-center gap-1 text-sm text-[var(--color-text-secondary)]">
+                          <MapPin class="w-4 h-4" />
+                          {shift.location}
+                        </div>
+                      </td>
+                      <td class="p-4">
+                        <div class="flex items-center gap-2">
+                          {getStatusIcon(shift.status)}
+                          <span class={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium border ${getStatusColor(shift.status)}`}>
+                            {shift.status}
+                          </span>
+                        </div>
+                      </td>
+                      <td class="p-4">
+                        <div class="flex items-center gap-2">
+                          <Show when={shift.status === "SCHEDULED"}>
+                            <button
+                              onClick={() => updateShiftStatus(shift.id, "COMPLETED")}
+                              class="text-green-600 hover:text-green-700 p-1 rounded"
+                              title="Mark as Completed"
+                            >
+                              <CheckCircle class="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => updateShiftStatus(shift.id, "CANCELLED")}
+                              class="text-red-600 hover:text-red-700 p-1 rounded"
+                              title="Cancel Shift"
+                            >
+                              <XCircle class="w-4 h-4" />
+                            </button>
+                          </Show>
+                          <button
+                            onClick={() => deleteShift(shift.id)}
+                            class="text-red-600 hover:text-red-700 p-1 rounded"
+                            title="Delete Shift"
+                          >
+                            <Trash2 class="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Show>
 
-                    <div class="flex gap-2 mt-4 pt-4 border-t border-[var(--color-border)]">
-                      {shift.status === "SCHEDULED" && (
-                        <>
-                          <button
-                            onClick={() => updateShiftStatus(shift.id, "COMPLETED")}
-                            class="flex-1 flex items-center justify-center gap-1 text-xs bg-green-50 text-green-700 border border-green-200 px-3 py-2 rounded-lg hover:bg-green-100 transition-colors font-medium"
-                          >
-                            <CheckCircle class="w-3 h-3" />
-                            Complete
-                          </button>
-                          <button
-                            onClick={() => updateShiftStatus(shift.id, "CANCELLED")}
-                            class="flex-1 flex items-center justify-center gap-1 text-xs bg-red-50 text-red-700 border border-red-200 px-3 py-2 rounded-lg hover:bg-red-100 transition-colors font-medium"
-                          >
-                            <XCircle class="w-3 h-3" />
-                            Cancel
-                          </button>
-                        </>
-                      )}
-                      <button
-                        onClick={() => deleteShift(shift.id)}
-                        class="flex items-center justify-center gap-1 text-xs bg-red-50 text-red-700 border border-red-200 px-3 py-2 rounded-lg hover:bg-red-100 transition-colors font-medium"
-                      >
-                        <Trash2 class="w-3 h-3" />
-                        Delete
-                      </button>
+      {/* Shift Types Tab */}
+      <Show when={activeTab() === "shift-types"}>
+        <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)]">
+          <div class="p-6 border-b border-[var(--color-border)]">
+            <div class="flex justify-between items-center">
+              <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Shift Types</h3>
+              <button
+                onClick={() => setShowAddShiftTypeModal(true)}
+                class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
+              >
+                <Plus class="w-4 h-4" />
+                Add Shift Type
+              </button>
+            </div>
+          </div>
+
+          <div class="p-6">
+            <div class="grid gap-4">
+              <Show when={shiftTypes().length === 0}>
+                <div class="text-center p-8 text-[var(--color-text-secondary)]">
+                  <div class="flex flex-col items-center gap-2">
+                    <Settings class="w-8 h-8 text-[var(--color-text-secondary)]" />
+                    <p>No shift types found</p>
+                  </div>
+                </div>
+              </Show>
+              <For each={shiftTypes()}>
+                {(shiftType) => (
+                  <div class="border border-[var(--color-border)] rounded-xl p-4">
+                    <div class="flex justify-between items-start">
+                      <div class="flex-1">
+                        <h4 class="font-semibold text-[var(--color-text-primary)]">{shiftType.name}</h4>
+                        <div class="flex items-center gap-4 mt-2 text-sm text-[var(--color-text-secondary)]">
+                          <div class="flex items-center gap-1">
+                            <Clock class="w-4 h-4" />
+                            {shiftType.start_time} - {shiftType.end_time}
+                          </div>
+                        </div>
+                        <Show when={shiftType.description}>
+                          <p class="text-sm text-[var(--color-text-secondary)] mt-2">{shiftType.description}</p>
+                        </Show>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingShiftType(shiftType);
+                            setShiftTypeForm({
+                              name: shiftType.name,
+                              start_time: shiftType.start_time,
+                              end_time: shiftType.end_time,
+                              description: shiftType.description || "",
+                            });
+                            setShowEditShiftTypeModal(true);
+                          }}
+                          class="text-blue-600 hover:text-blue-700 p-1 rounded"
+                          title="Edit Shift Type"
+                        >
+                          <Edit class="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => deleteShiftType(shiftType.id)}
+                          class="text-red-600 hover:text-red-700 p-1 rounded"
+                          title="Delete Shift Type"
+                        >
+                          <Trash2 class="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
               </For>
-            )}
-
-            {!isLoading() && filteredShifts().length === 0 && (
-              <div class="col-span-full text-center py-12 text-[var(--color-text-secondary)]">
-                No shifts found matching your criteria.
-              </div>
-            )}
-          </div>
-        </div>
-      </Show>
-      {/* Shift Types Tab */}
-      <Show when={activeTab() === "shift-types"}>
-        <div class="space-y-4">
-          <div class="flex justify-between items-center">
-            <div>
-              <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Shift Types</h3>
-              <p class="text-sm text-[var(--color-text-secondary)]">
-                Create and manage different shift types with their time schedules
-              </p>
             </div>
-            <button
-              onClick={() => setShowAddShiftTypeModal(true)}
-              class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-all shadow-sm font-medium"
-            >
-              <Plus class="w-4 h-4" />
-              Create Shift Type
-            </button>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <For each={shiftTypes()}>
-              {(shiftType) => (
-                <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-5 hover:shadow-md transition-all">
-                  <div class="flex justify-between items-start mb-4">
-                    <span
-                      class={`px-3 py-1 text-xs font-bold rounded-full border ${getShiftTypeColor(shiftType.name)}`}
-                    >
-                      {shiftType.name}
-                    </span>
-                    <button
-                      onClick={() => deleteShiftType(shiftType.id)}
-                      class="text-red-600 hover:bg-red-50 p-1 rounded"
-                    >
-                      <Trash2 class="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div class="space-y-3">
-                    <div class="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-                      <Clock class="w-4 h-4" />
-                      <span>
-                        {shiftType.start_time} - {shiftType.end_time}
-                      </span>
-                    </div>
-
-                    {shiftType.description && (
-                      <p class="text-sm text-[var(--color-text-secondary)]">
-                        {shiftType.description}
-                      </p>
-                    )}
-
-                    <div class="text-xs text-[var(--color-text-tertiary)]">
-                      Created: {new Date(shiftType.created_at).toLocaleDateString("id-ID")}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </For>
-
-            {shiftTypes().length === 0 && (
-              <div class="col-span-full text-center py-12 text-[var(--color-text-secondary)]">
-                No shift types created yet. Create your first shift type to get started.
-              </div>
-            )}
           </div>
         </div>
       </Show>
 
       {/* Employee Groups Tab */}
       <Show when={activeTab() === "groups"}>
-        <div class="space-y-4">
-          <div class="flex justify-between items-center">
-            <div>
+        <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)]">
+          <div class="p-6 border-b border-[var(--color-border)]">
+            <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Employee Groups</h3>
-              <p class="text-sm text-[var(--color-text-secondary)]">
-                Create groups and drag employees to assign them
-              </p>
+              <button
+                onClick={() => setShowAddGroupModal(true)}
+                class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
+              >
+                <Plus class="w-4 h-4" />
+                Create Group
+              </button>
             </div>
-            <button
-              onClick={() => setShowAddGroupModal(true)}
-              class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-all shadow-sm font-medium"
-            >
-              <Plus class="w-4 h-4" />
-              Create Group
-            </button>
           </div>
 
-          {/* Two Column Layout */}
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-[500px]">
-            {/* Left Column - Groups */}
-            <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-6">
-              <div class="flex items-center justify-between mb-4">
-                <h4 class="text-lg font-semibold text-[var(--color-text-primary)]">Groups</h4>
-                <span class="text-sm text-[var(--color-text-secondary)]">
-                  {employeeGroups().length} groups
-                </span>
-              </div>
-
-              <div class="space-y-3">
-                <For each={employeeGroups()}>
-                  {(group) => (
-                    <div
-                      class="bg-blue-500 text-white rounded-lg p-4 min-h-[120px] relative group hover:bg-blue-600 transition-colors"
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.currentTarget.classList.add('bg-blue-400');
-                      }}
-                      onDragLeave={(e) => {
-                        e.currentTarget.classList.remove('bg-blue-400');
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        e.currentTarget.classList.remove('bg-blue-400');
-                        const employeeId = e.dataTransfer?.getData('text/plain');
-                        if (employeeId) {
-                          const employee = employees().find(emp => emp.id === employeeId);
-                          if (employee && !group.employees.some(emp => emp.id === employeeId)) {
-                            // Add employee to group
-                            setEmployeeGroups(prev => prev.map(g =>
-                              g.id === group.id
-                                ? { ...g, employees: [...g.employees, employee] }
-                                : g
-                            ));
-                          }
-                        }
-                      }}
-                    >
-                      <div class="flex justify-between items-start mb-3">
-                        <h5 class="font-semibold text-lg">{group.name}</h5>
-                        <button
-                          onClick={() => {
-                            if (confirm("Are you sure you want to delete this group?")) {
-                              setEmployeeGroups(prev => prev.filter(g => g.id !== group.id));
-                            }
-                          }}
-                          class="opacity-0 group-hover:opacity-100 text-white hover:text-red-200 transition-opacity"
-                        >
-                          <Trash2 class="w-4 h-4" />
-                        </button>
+          <div class="p-6">
+            <div class="grid lg:grid-cols-2 gap-6">
+              {/* Groups Column */}
+              <div>
+                <h4 class="font-medium text-[var(--color-text-primary)] mb-4">Groups</h4>
+                <div class="space-y-4">
+                  <Show when={employeeGroups().length === 0}>
+                    <div class="text-center p-8 text-[var(--color-text-secondary)] border-2 border-dashed border-[var(--color-border)] rounded-xl">
+                      <div class="flex flex-col items-center gap-2">
+                        <Users class="w-8 h-8 text-[var(--color-text-secondary)]" />
+                        <p>No groups created yet</p>
+                        <p class="text-xs">Create a group to start organizing employees</p>
                       </div>
+                    </div>
+                  </Show>
+                  <For each={employeeGroups()}>
+                    {(group) => (
+                      <div
+                        class="border border-[var(--color-border)] rounded-xl p-4 min-h-[120px] bg-[var(--color-light-gray)]"
+                        onDragOver={handleDragOver}
+                        onDrop={() => handleDrop(group.id)}
+                      >
+                        <div class="flex justify-between items-start mb-3">
+                          <div>
+                            <h5 class="font-semibold text-[var(--color-text-primary)]">{group.name}</h5>
+                            <Show when={group.description}>
+                              <p class="text-sm text-[var(--color-text-secondary)]">{group.description}</p>
+                            </Show>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (confirm("Are you sure you want to delete this group?")) {
+                                setEmployeeGroups(prev => prev.filter(g => g.id !== group.id));
+                              }
+                            }}
+                            class="text-red-600 hover:text-red-700 p-1 rounded"
+                            title="Delete Group"
+                          >
+                            <Trash2 class="w-4 h-4" />
+                          </button>
+                        </div>
 
-                      <div class="space-y-2">
-                        <For each={group.employees}>
-                          {(employee) => (
-                            <div
-                              class="bg-white/20 rounded px-3 py-1 text-sm flex justify-between items-center cursor-move"
-                              draggable="true"
-                              onDragStart={(e) => {
-                                e.dataTransfer?.setData('text/plain', employee.id);
-                                e.dataTransfer?.setData('source', 'group');
-                                e.dataTransfer?.setData('groupId', group.id);
-                              }}
-                            >
-                              <span>{employee.full_name}</span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  // Remove employee from group
-                                  setEmployeeGroups(prev => prev.map(g =>
-                                    g.id === group.id
-                                      ? { ...g, employees: g.employees.filter(emp => emp.id !== employee.id) }
-                                      : g
-                                  ));
-                                }}
-                                class="text-white/70 hover:text-white"
-                              >
-                                <X class="w-3 h-3" />
-                              </button>
+                        <div class="space-y-2">
+                          <Show when={group.employees.length === 0}>
+                            <div class="text-center p-4 text-[var(--color-text-secondary)] border-2 border-dashed border-[var(--color-border)] rounded-lg">
+                              <p class="text-sm">Drop employees here</p>
                             </div>
-                          )}
-                        </For>
+                          </Show>
+                          <For each={group.employees}>
+                            {(employee) => (
+                              <div class="flex items-center justify-between bg-white p-2 rounded-lg border border-[var(--color-border)]">
+                                <div>
+                                  <div class="font-medium text-sm text-[var(--color-text-primary)]">{employee.full_name}</div>
+                                  <div class="text-xs text-[var(--color-text-secondary)]">NIK: {employee.nik}</div>
+                                </div>
+                                <button
+                                  onClick={() => removeEmployeeFromGroup(group.id, employee.id)}
+                                  class="text-red-600 hover:text-red-700 p-1 rounded"
+                                  title="Remove from Group"
+                                >
+                                  <X class="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </div>
 
-                        {group.employees.length === 0 && (
-                          <div class="text-white/60 text-sm italic text-center py-4 border-2 border-dashed border-white/30 rounded">
-                            Drag employees here
-                          </div>
-                        )}
+              {/* Available Employees Column */}
+              <div>
+                <h4 class="font-medium text-[var(--color-text-primary)] mb-4">Available Employees</h4>
+                <div class="space-y-2">
+                  <Show when={getUnassignedEmployees().length === 0}>
+                    <div class="text-center p-8 text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded-xl">
+                      <div class="flex flex-col items-center gap-2">
+                        <Users class="w-8 h-8 text-[var(--color-text-secondary)]" />
+                        <p>All employees are assigned to groups</p>
                       </div>
                     </div>
-                  )}
-                </For>
-
-                {employeeGroups().length === 0 && (
-                  <div class="text-center py-12 text-[var(--color-text-secondary)]">
-                    <Users class="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>No groups created yet.</p>
-                    <p class="text-sm">Create your first group to get started.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Right Column - Available Employees */}
-            <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-6">
-              <div class="flex items-center justify-between mb-4">
-                <h4 class="text-lg font-semibold text-[var(--color-text-primary)]">Available Employees</h4>
-                <span class="text-sm text-[var(--color-text-secondary)]">
-                  {getUnassignedEmployees().length} unassigned
-                </span>
-              </div>
-
-              <div class="space-y-2 max-h-[400px] overflow-y-auto">
-                <For each={getUnassignedEmployees()}>
-                  {(employee) => (
-                    <div
-                      class="bg-gray-50 border border-gray-200 rounded-lg p-3 cursor-move hover:bg-gray-100 transition-colors flex items-center justify-between"
-                      draggable="true"
-                      onDragStart={(e) => {
-                        e.dataTransfer?.setData('text/plain', employee.id);
-                        e.dataTransfer?.setData('source', 'available');
-                      }}
-                    >
-                      <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                          <Users class="w-4 h-4 text-blue-600" />
-                        </div>
+                  </Show>
+                  <For each={getUnassignedEmployees()}>
+                    {(employee) => (
+                      <div
+                        class="flex items-center justify-between bg-white p-3 rounded-lg border border-[var(--color-border)] cursor-move hover:shadow-sm transition-shadow"
+                        draggable={true}
+                        onDragStart={() => handleDragStart(employee)}
+                      >
                         <div>
-                          <div class="font-medium text-[var(--color-text-primary)]">
-                            {employee.full_name}
-                          </div>
-                          <div class="text-xs text-[var(--color-text-secondary)]">
-                            NIK: {employee.nik}
-                          </div>
+                          <div class="font-medium text-[var(--color-text-primary)]">{employee.full_name}</div>
+                          <div class="text-sm text-[var(--color-text-secondary)]">NIK: {employee.nik}</div>
+                        </div>
+                        <div class="text-[var(--color-text-secondary)]">
+                          <Users class="w-4 h-4" />
                         </div>
                       </div>
-                      <div class="text-gray-400">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                        </svg>
-                      </div>
-                    </div>
-                  )}
-                </For>
-
-                {getUnassignedEmployees().length === 0 && (
-                  <div class="text-center py-12 text-[var(--color-text-secondary)]">
-                    <CheckCircle class="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>All employees are assigned to groups!</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Drop zone for removing from groups */}
-              <div
-                class="mt-4 p-4 border-2 border-dashed border-gray-300 rounded-lg text-center text-gray-500 hover:border-red-300 hover:text-red-500 transition-colors"
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.add('border-red-400', 'bg-red-50');
-                }}
-                onDragLeave={(e) => {
-                  e.currentTarget.classList.remove('border-red-400', 'bg-red-50');
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.remove('border-red-400', 'bg-red-50');
-                  const employeeId = e.dataTransfer?.getData('text/plain');
-                  const source = e.dataTransfer?.getData('source');
-                  const groupId = e.dataTransfer?.getData('groupId');
-
-                  if (employeeId && source === 'group' && groupId) {
-                    // Remove employee from group
-                    setEmployeeGroups(prev => prev.map(g =>
-                      g.id === groupId
-                        ? { ...g, employees: g.employees.filter(emp => emp.id !== employeeId) }
-                        : g
-                    ));
-                  }
-                }}
-              >
-                <Trash2 class="w-6 h-6 mx-auto mb-2" />
-                <p class="text-sm">Drop here to remove from group</p>
+                    )}
+                  </For>
+                </div>
               </div>
             </div>
           </div>
@@ -1188,599 +1140,369 @@ const ShiftManagement: Component = () => {
 
       {/* Group Assignments Tab */}
       <Show when={activeTab() === "assignments"}>
-        <div class="space-y-4">
-          <div class="flex justify-between items-center">
-            <div>
+        <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)]">
+          <div class="p-6 border-b border-[var(--color-border)]">
+            <div class="flex justify-between items-center">
               <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Group Assignments</h3>
-              <p class="text-sm text-[var(--color-text-secondary)]">
-                Assign shifts to employee groups for bulk scheduling
-              </p>
+              <button
+                onClick={() => setShowAssignShiftModal(true)}
+                class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
+              >
+                <Plus class="w-4 h-4" />
+                Assign Shift to Group
+              </button>
             </div>
-            <button
-              onClick={() => setShowAssignShiftModal(true)}
-              class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-all shadow-sm font-medium"
-            >
-              <Plus class="w-4 h-4" />
-              Assign Shift to Group
-            </button>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <For each={shiftAssignments()}>
-              {(assignment) => (
-                <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-5 hover:shadow-md transition-all">
-                  <div class="flex justify-between items-start mb-4">
-                    <div class="flex gap-2">
-                      <span
-                        class={`px-3 py-1 text-xs font-bold rounded-full border ${getShiftTypeColor(assignment.shift_type_name)}`}
-                      >
-                        {assignment.shift_type_name}
-                      </span>
-                      <span
-                        class={`px-3 py-1 text-xs font-bold rounded-full border flex items-center gap-1 ${getStatusColor(assignment.status)}`}
-                      >
-                        {getStatusIcon(assignment.status)}
-                        {assignment.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div class="space-y-3">
-                    <div>
-                      <div class="text-lg font-bold text-[var(--color-text-primary)]">
-                        {assignment.group_name}
-                      </div>
-                      <div class="text-xs text-[var(--color-text-secondary)]">
-                        Group Assignment
-                      </div>
-                    </div>
-
-                    <div class="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-                      <Calendar class="w-4 h-4" />
-                      <span>{assignment.date}</span>
-                    </div>
-
-                    <div class="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-                      <MapPin class="w-4 h-4" />
-                      <span class="truncate">{assignment.location}</span>
-                    </div>
-
-                    {assignment.tasks.length > 0 && (
-                      <div class="pt-2 border-t border-[var(--color-border)]">
-                        <div class="text-xs font-semibold text-[var(--color-text-secondary)] mb-1">
-                          Tasks:
-                        </div>
-                        <ul class="text-xs text-[var(--color-text-secondary)] space-y-1">
-                          <For each={assignment.tasks.slice(0, 2)}>
-                            {(task) => <li>• {task}</li>}
-                          </For>
-                          {assignment.tasks.length > 2 && (
-                            <li class="text-[var(--color-primary-button)] font-medium">
-                              +{assignment.tasks.length - 2} more
-                            </li>
-                          )}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-
-                  <div class="flex gap-2 mt-4 pt-4 border-t border-[var(--color-border)]">
-                    <button
-                      onClick={() => {
-                        // Delete assignment logic here
-                        setShiftAssignments(prev => prev.filter(a => a.id !== assignment.id));
-                      }}
-                      class="flex items-center justify-center gap-1 text-xs bg-red-50 text-red-700 border border-red-200 px-3 py-2 rounded-lg hover:bg-red-100 transition-colors font-medium"
-                    >
-                      <Trash2 class="w-3 h-3" />
-                      Delete
-                    </button>
+          <div class="p-6">
+            <div class="space-y-4">
+              <Show when={shiftAssignments().length === 0}>
+                <div class="text-center p-8 text-[var(--color-text-secondary)]">
+                  <div class="flex flex-col items-center gap-2">
+                    <UserPlus class="w-8 h-8 text-[var(--color-text-secondary)]" />
+                    <p>No group assignments found</p>
                   </div>
                 </div>
-              )}
-            </For>
-
-            {shiftAssignments().length === 0 && (
-              <div class="col-span-full text-center py-12 text-[var(--color-text-secondary)]">
-                No group assignments created yet. Assign shifts to groups to get started.
-              </div>
-            )}
+              </Show>
+              <For each={shiftAssignments()}>
+                {(assignment) => (
+                  <div class="border border-[var(--color-border)] rounded-xl p-4">
+                    <div class="flex justify-between items-start">
+                      <div class="flex-1">
+                        <div class="flex items-center gap-4 mb-2">
+                          <h4 class="font-semibold text-[var(--color-text-primary)]">{assignment.group_name}</h4>
+                          <span class={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium border ${getShiftTypeColor(assignment.shift_type_name)}`}>
+                            {assignment.shift_type_name}
+                          </span>
+                          <span class={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium border ${getStatusColor(assignment.status)}`}>
+                            {assignment.status}
+                          </span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 text-sm text-[var(--color-text-secondary)]">
+                          <div class="flex items-center gap-1">
+                            <Calendar class="w-4 h-4" />
+                            {assignment.date}
+                          </div>
+                          <div class="flex items-center gap-1">
+                            <MapPin class="w-4 h-4" />
+                            {assignment.location}
+                          </div>
+                        </div>
+                        <Show when={assignment.tasks.length > 0}>
+                          <div class="mt-2">
+                            <p class="text-sm font-medium text-[var(--color-text-primary)]">Tasks:</p>
+                            <ul class="text-sm text-[var(--color-text-secondary)] list-disc list-inside">
+                              <For each={assignment.tasks}>
+                                {(task) => <li>{task}</li>}
+                              </For>
+                            </ul>
+                          </div>
+                        </Show>
+                        <Show when={assignment.notes}>
+                          <div class="mt-2">
+                            <p class="text-sm font-medium text-[var(--color-text-primary)]">Notes:</p>
+                            <p class="text-sm text-[var(--color-text-secondary)]">{assignment.notes}</p>
+                          </div>
+                        </Show>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (confirm("Are you sure you want to delete this assignment?")) {
+                            setShiftAssignments(prev => prev.filter(a => a.id !== assignment.id));
+                          }
+                        }}
+                        class="text-red-600 hover:text-red-700 p-1 rounded"
+                        title="Delete Assignment"
+                      >
+                        <Trash2 class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
           </div>
         </div>
       </Show>
-      {/* Create Shift Type Modal */}
+      {/* Add Shift Type Modal */}
       <Show when={showAddShiftTypeModal()}>
-        <div
-          class="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
-          style={{
-            "z-index": "9999",
-            "position": "fixed",
-            "top": "0",
-            "left": "0",
-            "right": "0",
-            "bottom": "0"
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowAddShiftTypeModal(false);
-              resetShiftTypeForm();
-            }
-          }}
-        >
-          <div
-            class="bg-white rounded-2xl shadow-xl max-w-md w-full"
-            style={{
-              "z-index": "10000",
-              "position": "relative"
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div class="border-b border-[var(--color-border)] p-6 flex justify-between items-center">
-              <h3 class="text-xl font-bold text-[var(--color-text-primary)]">
-                Create Shift Type
-              </h3>
+        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowAddShiftTypeModal(false)}>
+          <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Add Shift Type</h3>
               <button
-                onClick={() => {
-                  setShowAddShiftTypeModal(false);
-                  resetShiftTypeForm();
-                }}
-                class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-2"
+                onClick={() => setShowAddShiftTypeModal(false)}
+                class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
               >
                 <X class="w-5 h-5" />
               </button>
             </div>
 
-            <div class="p-6 space-y-4">
+            <div class="space-y-4">
               <div>
-                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
                   Shift Name *
                 </label>
                 <input
                   type="text"
-                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                  placeholder="e.g., Pagi, Siang, Malam"
                   value={shiftTypeForm().name}
-                  onInput={(e) =>
-                    setShiftTypeForm((prev) => ({ ...prev, name: e.currentTarget.value }))
-                  }
+                  onInput={(e) => setShiftTypeForm(prev => ({ ...prev, name: e.currentTarget.value }))}
+                  placeholder="e.g., Shift 1"
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                 />
               </div>
 
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
                     Start Time *
                   </label>
                   <input
                     type="time"
-                    class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
                     value={shiftTypeForm().start_time}
-                    onInput={(e) =>
-                      setShiftTypeForm((prev) => ({
-                        ...prev,
-                        start_time: e.currentTarget.value,
-                      }))
-                    }
+                    onInput={(e) => setShiftTypeForm(prev => ({ ...prev, start_time: e.currentTarget.value }))}
+                    class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                   />
                 </div>
-
                 <div>
-                  <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
                     End Time *
                   </label>
                   <input
                     type="time"
-                    class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
                     value={shiftTypeForm().end_time}
-                    onInput={(e) =>
-                      setShiftTypeForm((prev) => ({
-                        ...prev,
-                        end_time: e.currentTarget.value,
-                      }))
-                    }
+                    onInput={(e) => setShiftTypeForm(prev => ({ ...prev, end_time: e.currentTarget.value }))}
+                    class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                   />
                 </div>
               </div>
 
               <div>
-                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                  Description (Optional)
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Description
                 </label>
                 <textarea
-                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white resize-none"
-                  rows="3"
-                  placeholder="Describe this shift type..."
                   value={shiftTypeForm().description}
-                  onInput={(e) =>
-                    setShiftTypeForm((prev) => ({ ...prev, description: e.currentTarget.value }))
-                  }
+                  onInput={(e) => setShiftTypeForm(prev => ({ ...prev, description: e.currentTarget.value }))}
+                  placeholder="Optional description"
+                  rows="3"
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                 />
               </div>
-            </div>
 
-            <div class="border-t border-[var(--color-border)] p-6 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowAddShiftTypeModal(false);
-                  resetShiftTypeForm();
-                }}
-                class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl hover:bg-[var(--color-light-gray)] transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createShiftType}
-                disabled={isLoading()}
-                class="flex-1 px-4 py-2.5 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-colors font-medium disabled:opacity-50"
-              >
-                {isLoading() ? "Creating..." : "Create Shift Type"}
-              </button>
+              <div class="flex gap-2 pt-4">
+                <button
+                  onClick={() => setShowAddShiftTypeModal(false)}
+                  class="flex-1 px-4 py-2 border border-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl hover:bg-[var(--color-light-gray)] transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={createShiftType}
+                  disabled={isLoading()}
+                  class="flex-1 px-4 py-2 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50"
+                >
+                  {isLoading() ? "Creating..." : "Create Shift Type"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </Show>
 
-      {/* Create Employee Group Modal */}
-      <Show when={showAddGroupModal()}>
-        <div
-          class="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
-          style={{
-            "z-index": "9999",
-            "position": "fixed",
-            "top": "0",
-            "left": "0",
-            "right": "0",
-            "bottom": "0"
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowAddGroupModal(false);
-              resetGroupForm();
-            }
-          }}
-        >
-          <div
-            class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-            style={{
-              "z-index": "10000",
-              "position": "relative"
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div class="sticky top-0 bg-white border-b border-[var(--color-border)] p-6 flex justify-between items-center">
-              <h3 class="text-xl font-bold text-[var(--color-text-primary)]">
-                Create Employee Group
-              </h3>
+      {/* Edit Shift Type Modal */}
+      <Show when={showEditShiftTypeModal()}>
+        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowEditShiftTypeModal(false)}>
+          <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Edit Shift Type</h3>
               <button
-                onClick={() => {
-                  setShowAddGroupModal(false);
-                  resetGroupForm();
-                }}
-                class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-2"
+                onClick={() => setShowEditShiftTypeModal(false)}
+                class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
               >
                 <X class="w-5 h-5" />
               </button>
             </div>
 
-            <div class="p-6 space-y-4">
+            <div class="space-y-4">
               <div>
-                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Shift Name *
+                </label>
+                <input
+                  type="text"
+                  value={shiftTypeForm().name}
+                  onInput={(e) => setShiftTypeForm(prev => ({ ...prev, name: e.currentTarget.value }))}
+                  placeholder="e.g., Shift 1"
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                />
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                    Start Time *
+                  </label>
+                  <input
+                    type="time"
+                    value={shiftTypeForm().start_time}
+                    onInput={(e) => setShiftTypeForm(prev => ({ ...prev, start_time: e.currentTarget.value }))}
+                    class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                    End Time *
+                  </label>
+                  <input
+                    type="time"
+                    value={shiftTypeForm().end_time}
+                    onInput={(e) => setShiftTypeForm(prev => ({ ...prev, end_time: e.currentTarget.value }))}
+                    class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={shiftTypeForm().description}
+                  onInput={(e) => setShiftTypeForm(prev => ({ ...prev, description: e.currentTarget.value }))}
+                  placeholder="Optional description"
+                  rows="3"
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                />
+              </div>
+
+              <div class="flex gap-2 pt-4">
+                <button
+                  onClick={() => setShowEditShiftTypeModal(false)}
+                  class="flex-1 px-4 py-2 border border-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl hover:bg-[var(--color-light-gray)] transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={editShiftType}
+                  disabled={isLoading()}
+                  class="flex-1 px-4 py-2 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50"
+                >
+                  {isLoading() ? "Updating..." : "Update Shift Type"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* Add Group Modal */}
+      <Show when={showAddGroupModal()}>
+        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowAddGroupModal(false)}>
+          <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Create Employee Group</h3>
+              <button
+                onClick={() => setShowAddGroupModal(false)}
+                class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              >
+                <X class="w-5 h-5" />
+              </button>
+            </div>
+
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
                   Group Name *
                 </label>
                 <input
                   type="text"
-                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                  placeholder="e.g., Group A, Team Alpha"
                   value={groupForm().name}
-                  onInput={(e) =>
-                    setGroupForm((prev) => ({ ...prev, name: e.currentTarget.value }))
-                  }
+                  onInput={(e) => setGroupForm(prev => ({ ...prev, name: e.currentTarget.value }))}
+                  placeholder="e.g., Group 1"
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                 />
               </div>
 
               <div>
-                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                  Description (Optional)
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Description
                 </label>
                 <textarea
-                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white resize-none"
-                  rows="3"
-                  placeholder="Describe this group..."
                   value={groupForm().description}
-                  onInput={(e) =>
-                    setGroupForm((prev) => ({ ...prev, description: e.currentTarget.value }))
-                  }
+                  onInput={(e) => setGroupForm(prev => ({ ...prev, description: e.currentTarget.value }))}
+                  placeholder="Optional description"
+                  rows="3"
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                 />
               </div>
 
-              <div class="bg-blue-50 p-4 rounded-xl">
-                <div class="flex items-center gap-2 text-blue-700 mb-2">
-                  <Users class="w-4 h-4" />
-                  <span class="text-sm font-medium">How to add employees:</span>
-                </div>
-                <p class="text-sm text-blue-600">
-                  After creating the group, you can drag and drop employees from the "Available Employees" section to assign them to this group.
-                </p>
+              <div class="flex gap-2 pt-4">
+                <button
+                  onClick={() => setShowAddGroupModal(false)}
+                  class="flex-1 px-4 py-2 border border-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl hover:bg-[var(--color-light-gray)] transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={createEmployeeGroup}
+                  disabled={isLoading()}
+                  class="flex-1 px-4 py-2 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50"
+                >
+                  {isLoading() ? "Creating..." : "Create Group"}
+                </button>
               </div>
-            </div>
-
-            <div class="sticky bottom-0 bg-white border-t border-[var(--color-border)] p-6 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowAddGroupModal(false);
-                  resetGroupForm();
-                }}
-                class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl hover:bg-[var(--color-light-gray)] transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createEmployeeGroup}
-                disabled={isLoading()}
-                class="flex-1 px-4 py-2.5 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-colors font-medium disabled:opacity-50"
-              >
-                {isLoading() ? "Creating..." : "Create Group"}
-              </button>
             </div>
           </div>
         </div>
       </Show>
+
       {/* Assign Shift to Group Modal */}
       <Show when={showAssignShiftModal()}>
-        <div
-          class="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
-          style={{
-            "z-index": "9999",
-            "position": "fixed",
-            "top": "0",
-            "left": "0",
-            "right": "0",
-            "bottom": "0"
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowAssignShiftModal(false);
-              resetAssignmentForm();
-            }
-          }}
-        >
-          <div
-            class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-            style={{
-              "z-index": "10000",
-              "position": "relative"
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div class="sticky top-0 bg-white border-b border-[var(--color-border)] p-6 flex justify-between items-center">
-              <h3 class="text-xl font-bold text-[var(--color-text-primary)]">
-                Assign Shift to Group
-              </h3>
+        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowAssignShiftModal(false)}>
+          <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Assign Shift to Group</h3>
               <button
-                onClick={() => {
-                  setShowAssignShiftModal(false);
-                  resetAssignmentForm();
-                }}
-                class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-2"
+                onClick={() => setShowAssignShiftModal(false)}
+                class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
               >
                 <X class="w-5 h-5" />
               </button>
             </div>
 
-            <div class="p-6 space-y-4">
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                    Employee Group *
-                  </label>
-                  <select
-                    class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                    value={assignmentForm().group_id}
-                    onChange={(e) =>
-                      setAssignmentForm((prev) => ({ ...prev, group_id: e.currentTarget.value }))
-                    }
-                  >
-                    <option value="">Select Group</option>
-                    <For each={employeeGroups()}>
-                      {(group) => (
-                        <option value={group.id}>
-                          {group.name} ({group.employees.length} employees)
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                </div>
-
-                <div>
-                  <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                    Shift Type *
-                  </label>
-                  <select
-                    class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                    value={assignmentForm().shift_type_id}
-                    onChange={(e) =>
-                      setAssignmentForm((prev) => ({ ...prev, shift_type_id: e.currentTarget.value }))
-                    }
-                  >
-                    <option value="">Select Shift Type</option>
-                    <For each={shiftTypes()}>
-                      {(shiftType) => (
-                        <option value={shiftType.id}>
-                          {shiftType.name} ({shiftType.start_time} - {shiftType.end_time})
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                </div>
-              </div>
-
+            <div class="space-y-4">
               <div>
-                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                  Date *
-                </label>
-                <input
-                  type="date"
-                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                  value={assignmentForm().date}
-                  onInput={(e) =>
-                    setAssignmentForm((prev) => ({ ...prev, date: e.currentTarget.value }))
-                  }
-                />
-              </div>
-
-              <div>
-                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                  Location *
-                </label>
-                <input
-                  type="text"
-                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                  placeholder="e.g., Gedung A - Lantai 1"
-                  value={assignmentForm().location}
-                  onInput={(e) =>
-                    setAssignmentForm((prev) => ({
-                      ...prev,
-                      location: e.currentTarget.value,
-                    }))
-                  }
-                />
-              </div>
-
-              <div>
-                <div class="flex justify-between items-center mb-2">
-                  <label class="block text-sm font-semibold text-[var(--color-text-primary)]">
-                    Tasks
-                  </label>
-                  <button
-                    onClick={addAssignmentTaskField}
-                    class="text-xs text-[var(--color-primary-button)] hover:underline font-medium"
-                  >
-                    + Add Task
-                  </button>
-                </div>
-                <div class="space-y-2">
-                  <For each={assignmentForm().tasks}>
-                    {(task, index) => (
-                      <div class="flex gap-2">
-                        <input
-                          type="text"
-                          class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-sm"
-                          placeholder="Enter task description"
-                          value={task}
-                          onInput={(e) => updateAssignmentTask(index(), e.currentTarget.value)}
-                        />
-                        {assignmentForm().tasks.length > 1 && (
-                          <button
-                            onClick={() => removeAssignmentTaskField(index())}
-                            class="text-red-600 hover:bg-red-50 p-2 rounded-lg"
-                          >
-                            <X class="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </div>
-
-              <div>
-                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                  Notes (Optional)
-                </label>
-                <textarea
-                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white resize-none"
-                  rows="3"
-                  placeholder="Add any additional notes..."
-                  value={assignmentForm().notes}
-                  onInput={(e) =>
-                    setAssignmentForm((prev) => ({ ...prev, notes: e.currentTarget.value }))
-                  }
-                />
-              </div>
-            </div>
-
-            <div class="sticky bottom-0 bg-white border-t border-[var(--color-border)] p-6 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowAssignShiftModal(false);
-                  resetAssignmentForm();
-                }}
-                class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl hover:bg-[var(--color-light-gray)] transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={assignShiftToGroup}
-                disabled={isLoading()}
-                class="flex-1 px-4 py-2.5 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-colors font-medium disabled:opacity-50"
-              >
-                {isLoading() ? "Assigning..." : "Assign Shift"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Show>
-
-      {/* Add Individual Shift Modal (Legacy) */}
-      <Show when={showAddShiftModal()}>
-        <div
-          class="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
-          style={{
-            "z-index": "9999",
-            "position": "fixed",
-            "top": "0",
-            "left": "0",
-            "right": "0",
-            "bottom": "0"
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowAddShiftModal(false);
-              resetForm();
-            }
-          }}
-        >
-          <div
-            class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-            style={{
-              "z-index": "10000",
-              "position": "relative"
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div class="sticky top-0 bg-white border-b border-[var(--color-border)] p-6 flex justify-between items-center">
-              <h3 class="text-xl font-bold text-[var(--color-text-primary)]">
-                Add Individual Shift
-              </h3>
-              <button
-                onClick={() => {
-                  setShowAddShiftModal(false);
-                  resetForm();
-                }}
-                class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-2"
-              >
-                <X class="w-5 h-5" />
-              </button>
-            </div>
-
-            <div class="p-6 space-y-4">
-              <div>
-                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                  Employee *
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Employee Group *
                 </label>
                 <select
-                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                  value={formData().nik}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, nik: e.currentTarget.value }))
-                  }
+                  value={assignmentForm().group_id}
+                  onChange={(e) => setAssignmentForm(prev => ({ ...prev, group_id: e.currentTarget.value }))}
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                 >
-                  <option value="">Select Employee</option>
-                  <For each={employees()}>
-                    {(emp) => (
-                      <option value={emp.nik}>
-                        {emp.full_name} (NIK: {emp.nik})
-                      </option>
+                  <option value="">Select a group</option>
+                  <For each={employeeGroups()}>
+                    {(group) => (
+                      <option value={group.id}>{group.name}</option>
+                    )}
+                  </For>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Shift Type *
+                </label>
+                <select
+                  value={assignmentForm().shift_type_id}
+                  onChange={(e) => setAssignmentForm(prev => ({ ...prev, shift_type_id: e.currentTarget.value }))}
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                >
+                  <option value="">Select shift type</option>
+                  <For each={shiftTypes()}>
+                    {(shiftType) => (
+                      <option value={shiftType.id}>{shiftType.name} ({shiftType.start_time} - {shiftType.end_time})</option>
                     )}
                   </For>
                 </select>
@@ -1788,151 +1510,261 @@ const ShiftManagement: Component = () => {
 
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                    Shift Type *
-                  </label>
-                  <select
-                    class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                    value={formData().shift_type_id}
-                    onChange={(e) => {
-                      const selectedShiftType = shiftTypes().find(st => st.id === e.currentTarget.value);
-                      if (selectedShiftType) {
-                        setFormData((prev) => ({
-                          ...prev,
-                          shift_type: selectedShiftType.name,
-                          shift_type_id: selectedShiftType.id,
-                          start_time: selectedShiftType.start_time,
-                          end_time: selectedShiftType.end_time,
-                        }));
-                      }
-                    }}
-                  >
-                    <option value="">Select Shift Type</option>
-                    <For each={shiftTypes()}>
-                      {(shiftType) => (
-                        <option value={shiftType.id}>
-                          {shiftType.name} ({shiftType.start_time} - {shiftType.end_time})
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                </div>
-
-                <div>
-                  <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
                     Date *
                   </label>
                   <input
                     type="date"
-                    class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                    value={formData().date}
-                    onInput={(e) =>
-                      setFormData((prev) => ({ ...prev, date: e.currentTarget.value }))
-                    }
+                    value={assignmentForm().date}
+                    onInput={(e) => setAssignmentForm(prev => ({ ...prev, date: e.currentTarget.value }))}
+                    class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                    Location *
+                  </label>
+                  <input
+                    type="text"
+                    value={assignmentForm().location}
+                    onInput={(e) => setAssignmentForm(prev => ({ ...prev, location: e.currentTarget.value }))}
+                    placeholder="e.g., Building A"
+                    class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                   />
                 </div>
               </div>
 
-              {/* Display selected shift time (read-only) */}
-              {formData().shift_type && (
-                <div class="bg-[var(--color-light-gray)] p-4 rounded-xl">
-                  <div class="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-                    <Clock class="w-4 h-4" />
-                    <span>
-                      Selected shift time: {formData().start_time} - {formData().end_time}
-                    </span>
-                  </div>
-                </div>
-              )}
-
               <div>
-                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                  Location *
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Tasks
                 </label>
-                <input
-                  type="text"
-                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                  placeholder="e.g., Gedung A - Lantai 1"
-                  value={formData().location}
-                  onInput={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      location: e.currentTarget.value,
-                    }))
-                  }
-                />
+                <For each={assignmentForm().tasks}>
+                  {(task, index) => (
+                    <div class="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={task}
+                        onInput={(e) => updateAssignmentTask(index(), e.currentTarget.value)}
+                        placeholder="Enter task"
+                        class="flex-1 px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                      />
+                      <Show when={assignmentForm().tasks.length > 1}>
+                        <button
+                          onClick={() => removeAssignmentTaskField(index())}
+                          class="text-red-600 hover:text-red-700 p-2"
+                        >
+                          <Trash2 class="w-4 h-4" />
+                        </button>
+                      </Show>
+                    </div>
+                  )}
+                </For>
+                <button
+                  onClick={addAssignmentTaskField}
+                  class="text-[var(--color-primary-button)] hover:text-blue-700 text-sm flex items-center gap-1"
+                >
+                  <Plus class="w-4 h-4" />
+                  Add Task
+                </button>
               </div>
 
               <div>
-                <div class="flex justify-between items-center mb-2">
-                  <label class="block text-sm font-semibold text-[var(--color-text-primary)]">
-                    Tasks
-                  </label>
-                  <button
-                    onClick={addTaskField}
-                    class="text-xs text-[var(--color-primary-button)] hover:underline font-medium"
-                  >
-                    + Add Task
-                  </button>
-                </div>
-                <div class="space-y-2">
-                  <For each={formData().tasks}>
-                    {(task, index) => (
-                      <div class="flex gap-2">
-                        <input
-                          type="text"
-                          class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-sm"
-                          placeholder="Enter task description"
-                          value={task}
-                          onInput={(e) => updateTask(index(), e.currentTarget.value)}
-                        />
-                        {formData().tasks.length > 1 && (
-                          <button
-                            onClick={() => removeTaskField(index())}
-                            class="text-red-600 hover:bg-red-50 p-2 rounded-lg"
-                          >
-                            <X class="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </div>
-
-              <div>
-                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                  Notes (Optional)
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Notes
                 </label>
                 <textarea
-                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white resize-none"
+                  value={assignmentForm().notes}
+                  onInput={(e) => setAssignmentForm(prev => ({ ...prev, notes: e.currentTarget.value }))}
+                  placeholder="Optional notes"
                   rows="3"
-                  placeholder="Add any additional notes..."
-                  value={formData().notes}
-                  onInput={(e) =>
-                    setFormData((prev) => ({ ...prev, notes: e.currentTarget.value }))
-                  }
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                 />
               </div>
+
+              <div class="flex gap-2 pt-4">
+                <button
+                  onClick={() => setShowAssignShiftModal(false)}
+                  class="flex-1 px-4 py-2 border border-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl hover:bg-[var(--color-light-gray)] transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={assignShiftToGroup}
+                  disabled={isLoading()}
+                  class="flex-1 px-4 py-2 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50"
+                >
+                  {isLoading() ? "Assigning..." : "Assign Shift"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* Add Individual Shift Modal */}
+      <Show when={showAddShiftModal()}>
+        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowAddShiftModal(false)}>
+          <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Add Individual Shift</h3>
+              <button
+                onClick={() => setShowAddShiftModal(false)}
+                class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              >
+                <X class="w-5 h-5" />
+              </button>
             </div>
 
-            <div class="sticky bottom-0 bg-white border-t border-[var(--color-border)] p-6 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowAddShiftModal(false);
-                  resetForm();
-                }}
-                class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl hover:bg-[var(--color-light-gray)] transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createShift}
-                disabled={isLoading()}
-                class="flex-1 px-4 py-2.5 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-colors font-medium disabled:opacity-50"
-              >
-                {isLoading() ? "Creating..." : "Create Shift"}
-              </button>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Employee NIK *
+                </label>
+                <select
+                  value={formData().nik}
+                  onChange={(e) => {
+                    const selectedEmployee = employees().find(emp => emp.nik === e.currentTarget.value);
+                    setFormData(prev => ({
+                      ...prev,
+                      nik: e.currentTarget.value,
+                      employee_name: selectedEmployee?.full_name || ""
+                    }));
+                  }}
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                >
+                  <option value="">Select employee</option>
+                  <For each={employees()}>
+                    {(employee) => (
+                      <option value={employee.nik}>{employee.nik} - {employee.full_name}</option>
+                    )}
+                  </For>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Shift Type *
+                </label>
+                <select
+                  value={formData().shift_type_id}
+                  onChange={(e) => {
+                    const selectedShiftType = shiftTypes().find(st => st.id === e.currentTarget.value);
+                    if (selectedShiftType) {
+                      setFormData(prev => ({
+                        ...prev,
+                        shift_type_id: e.currentTarget.value,
+                        shift_type: selectedShiftType.name,
+                        start_time: selectedShiftType.start_time,
+                        end_time: selectedShiftType.end_time
+                      }));
+                    }
+                  }}
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                >
+                  <option value="">Select shift type</option>
+                  <For each={shiftTypes()}>
+                    {(shiftType) => (
+                      <option value={shiftType.id}>{shiftType.name} ({shiftType.start_time} - {shiftType.end_time})</option>
+                    )}
+                  </For>
+                </select>
+              </div>
+
+              <Show when={formData().shift_type_id}>
+                <div class="bg-[var(--color-light-gray)] p-3 rounded-xl">
+                  <p class="text-sm font-medium text-[var(--color-text-primary)]">Shift Time:</p>
+                  <p class="text-sm text-[var(--color-text-secondary)]">{formData().start_time} - {formData().end_time}</p>
+                </div>
+              </Show>
+
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={formData().date}
+                    onInput={(e) => setFormData(prev => ({ ...prev, date: e.currentTarget.value }))}
+                    class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                    Location *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData().location}
+                    onInput={(e) => setFormData(prev => ({ ...prev, location: e.currentTarget.value }))}
+                    placeholder="e.g., Building A"
+                    class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Tasks
+                </label>
+                <For each={formData().tasks}>
+                  {(task, index) => (
+                    <div class="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={task}
+                        onInput={(e) => updateTask(index(), e.currentTarget.value)}
+                        placeholder="Enter task"
+                        class="flex-1 px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                      />
+                      <Show when={formData().tasks.length > 1}>
+                        <button
+                          onClick={() => removeTaskField(index())}
+                          class="text-red-600 hover:text-red-700 p-2"
+                        >
+                          <Trash2 class="w-4 h-4" />
+                        </button>
+                      </Show>
+                    </div>
+                  )}
+                </For>
+                <button
+                  onClick={addTaskField}
+                  class="text-[var(--color-primary-button)] hover:text-blue-700 text-sm flex items-center gap-1"
+                >
+                  <Plus class="w-4 h-4" />
+                  Add Task
+                </button>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-[var(--color-text-primary)] mb-1">
+                  Notes
+                </label>
+                <textarea
+                  value={formData().notes}
+                  onInput={(e) => setFormData(prev => ({ ...prev, notes: e.currentTarget.value }))}
+                  placeholder="Optional notes"
+                  rows="3"
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
+                />
+              </div>
+
+              <div class="flex gap-2 pt-4">
+                <button
+                  onClick={() => setShowAddShiftModal(false)}
+                  class="flex-1 px-4 py-2 border border-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl hover:bg-[var(--color-light-gray)] transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={createShift}
+                  disabled={isLoading()}
+                  class="flex-1 px-4 py-2 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50"
+                >
+                  {isLoading() ? "Creating..." : "Create Shift"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
