@@ -62,9 +62,21 @@ const LocationBoundaries: Component = () => {
     setError(null);
     try {
       const response = await fetch(`${BASE_URL}/location-boundaries/all`);
-      const result = await response.json();
+      
+      if (!response.ok) {
+        setError(`Server error: ${response.status} ${response.statusText}`);
+        return;
+      }
 
-      if (response.ok && result.success) {
+      const text = await response.text();
+      if (!text) {
+        setError("Empty response from server");
+        return;
+      }
+
+      const result = JSON.parse(text);
+
+      if (result.success) {
         const mappedData = result.data.map((item: any) => ({
           ...item,
           id: item.id?.id?.String || item.id?.id || item.id,
@@ -131,7 +143,8 @@ const LocationBoundaries: Component = () => {
         }),
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
 
       if (response.ok && result.success) {
         setSuccess("Location boundary berhasil ditambahkan");
@@ -171,7 +184,8 @@ const LocationBoundaries: Component = () => {
         }),
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
 
       if (response.ok && result.success) {
         setSuccess("Location boundary berhasil diupdate");
@@ -204,7 +218,8 @@ const LocationBoundaries: Component = () => {
         }),
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
 
       if (response.ok && result.success) {
         setSuccess(`Location ${!currentStatus ? "diaktifkan" : "dinonaktifkan"}`);
@@ -232,7 +247,8 @@ const LocationBoundaries: Component = () => {
         method: "DELETE",
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
 
       if (response.ok && result.success) {
         setSuccess("Location boundary berhasil dihapus");
