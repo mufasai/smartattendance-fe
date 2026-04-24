@@ -1,10 +1,17 @@
-import { type Component, createSignal } from "solid-js";
+import { type Component, createSignal, For } from "solid-js";
 import Input from "./ui/Input";
 import Button from "./ui/Button";
 import { Save, MapPin } from "lucide-solid";
 
+export interface Area {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 export interface Checkpoint {
   id: string;
+  area_id?: string;
   name: string;
   code: string;
   latitude: string;
@@ -15,11 +22,13 @@ export interface Checkpoint {
 
 interface CheckpointFormProps {
   initialData?: Checkpoint | null;
+  areas: Area[];
   onSubmit: (data: Omit<Checkpoint, "status">) => void;
   onCancel: () => void;
 }
 
 const CheckpointForm: Component<CheckpointFormProps> = (props) => {
+  const [areaId, setAreaId] = createSignal(props.initialData?.area_id || "");
   const [name, setName] = createSignal(props.initialData?.name || "");
   const [code, setCode] = createSignal(props.initialData?.code || "");
   const [lat, setLat] = createSignal(props.initialData?.latitude || "");
@@ -30,6 +39,7 @@ const CheckpointForm: Component<CheckpointFormProps> = (props) => {
     e.preventDefault();
     props.onSubmit({
       id: props.initialData?.id || Math.random().toString(36).substr(2, 9),
+      area_id: areaId(),
       name: name(),
       code: code(),
       latitude: lat(),
@@ -40,6 +50,23 @@ const CheckpointForm: Component<CheckpointFormProps> = (props) => {
 
   return (
     <form onSubmit={handleSubmit} class="space-y-5">
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-semibold text-[var(--color-text-primary)]">
+          Pilih Area / Grouping *
+        </label>
+        <select
+          class="w-full px-4 py-2.5 bg-[var(--color-light-gray)]/50 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm transition-all"
+          value={areaId()}
+          onChange={(e) => setAreaId(e.currentTarget.value)}
+          required
+        >
+          <option value="">-- Tanpa Area --</option>
+          <For each={props.areas}>
+            {(area) => <option value={area.id}>{area.name}</option>}
+          </For>
+        </select>
+      </div>
+
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Input
           label="Nama Checkpoint"

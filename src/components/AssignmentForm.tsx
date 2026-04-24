@@ -1,4 +1,4 @@
-import { type Component, createSignal, For } from "solid-js";
+import { type Component, createSignal, For, Show } from "solid-js";
 import Input from "./ui/Input";
 import Button from "./ui/Button";
 import { Clock, MapPin, Save, User } from "lucide-solid";
@@ -10,8 +10,15 @@ interface Employee {
   full_name: string;
 }
 
+interface Group {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 export interface CreateAssignmentPayload {
-  employee_id: string;
+  assignee_type: string; // "individual" | "group"
+  assignee_id: string;
   start_time: string;
   end_time: string;
   checkpoints: string[]; // array of checkpoint IDs
@@ -19,6 +26,7 @@ export interface CreateAssignmentPayload {
 
 interface AssignmentFormProps {
   employees: Employee[];
+  groups: Group[];
   checkpoints: Checkpoint[];
   onSubmit: (data: CreateAssignmentPayload) => void;
   onCancel: () => void;
@@ -26,7 +34,8 @@ interface AssignmentFormProps {
 }
 
 const AssignmentForm: Component<AssignmentFormProps> = (props) => {
-  const [employeeId, setEmployeeId] = createSignal("");
+  const [assigneeType, setAssigneeType] = createSignal("individual");
+  const [assigneeId, setAssigneeId] = createSignal("");
   const [startTime, setStartTime] = createSignal("");
   const [endTime, setEndTime] = createSignal("");
   const [selectedCheckpoints, setSelectedCheckpoints] = createSignal<string[]>([]);
@@ -41,9 +50,10 @@ const AssignmentForm: Component<AssignmentFormProps> = (props) => {
 
   const handleSubmit = (e: Event) => {
     e.preventDefault();
-    if (!employeeId() || !startTime() || !endTime()) return;
+    if (!assigneeId() || !startTime() || !endTime()) return;
     props.onSubmit({
-      employee_id: employeeId(),
+      assignee_type: assigneeType(),
+      assignee_id: assigneeId(),
       start_time: startTime(),
       end_time: endTime(),
       checkpoints: selectedCheckpoints(),
@@ -52,26 +62,55 @@ const AssignmentForm: Component<AssignmentFormProps> = (props) => {
 
   return (
     <form onSubmit={handleSubmit} class="space-y-5">
-      {/* Employee Selector */}
+      {/* Assignee Type Toggle */}
+      <div class="flex p-1 bg-[var(--color-light-gray)] rounded-xl border border-[var(--color-border)]">
+        <button
+          type="button"
+          onClick={() => { setAssigneeType("individual"); setAssigneeId(""); }}
+          class={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${assigneeType() === "individual" ? "bg-white shadow-sm text-[var(--color-primary-button)]" : "text-[var(--color-text-secondary)]"}`}
+        >
+          Perorangan
+        </button>
+        <button
+          type="button"
+          onClick={() => { setAssigneeType("group"); setAssigneeId(""); }}
+          class={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${assigneeType() === "group" ? "bg-white shadow-sm text-[var(--color-primary-button)]" : "text-[var(--color-text-secondary)]"}`}
+        >
+          Grup / Regu
+        </button>
+      </div>
+
+      {/* Assignee Selector */}
       <div class="flex flex-col gap-1.5">
         <label class="text-sm font-semibold text-[var(--color-text-primary)] flex items-center gap-2">
           <User class="w-4 h-4 text-[var(--color-primary-button)]" />
-          Pilih Petugas *
+          {assigneeType() === "individual" ? "Pilih Petugas *" : "Pilih Grup *"}
         </label>
         <select
           class="w-full px-4 py-2.5 bg-[var(--color-light-gray)]/50 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] text-sm transition-all"
-          value={employeeId()}
-          onChange={(e) => setEmployeeId(e.currentTarget.value)}
+          value={assigneeId()}
+          onChange={(e) => setAssigneeId(e.currentTarget.value)}
           required
         >
-          <option value="">-- Pilih Karyawan --</option>
-          <For each={props.employees}>
-            {(emp) => (
-              <option value={emp.id}>
-                {emp.full_name} (NIK: {emp.nik})
-              </option>
-            )}
-          </For>
+          <option value="">-- Pilih {assigneeType() === "individual" ? "Karyawan" : "Grup"} --</option>
+          <Show when={assigneeType() === "individual"}>
+            <For each={props.employees}>
+              {(emp) => (
+                <option value={emp.id}>
+                  {emp.full_name} (NIK: {emp.nik})
+                </option>
+              )}
+            </For>
+          </Show>
+          <Show when={assigneeType() === "group"}>
+            <For each={props.groups}>
+              {(g) => (
+                <option value={g.id}>
+                  {g.name}
+                </option>
+              )}
+            </For>
+          </Show>
         </select>
       </div>
 
