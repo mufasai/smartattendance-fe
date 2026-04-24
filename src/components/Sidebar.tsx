@@ -28,8 +28,8 @@ const menuItems = [
   { name: "Approval Cuti", path: "/approval/cuti", icon: CalendarOff },
   { name: "Approval Lembur", path: "/approval/lembur", icon: Timer },
   { name: "Performance", path: "/performance", icon: TrendingUp },
-  { name: "Payroll", path: "/payroll", icon: Banknote },
-  { name: "Recruitment", path: "/recruitment", icon: UserPlus },
+  // { name: "Payroll", path: "/payroll", icon: Banknote },
+  // { name: "Recruitment", path: "/recruitment", icon: UserPlus },
 ];
 
 const Sidebar: Component = () => {
