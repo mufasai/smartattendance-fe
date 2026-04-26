@@ -18,16 +18,8 @@ import auth from "../store/auth";
 const menuItems = [
   { name: "Dashboard", path: "/", icon: LayoutDashboard },
   { name: "Employee", path: "/employee", icon: Users },
-  { name: "Attendance", path: "/attendance", icon: Clock },
   { name: "Shift Management", path: "/shift", icon: CalendarClock },
   { name: "Patrol", path: "/patrol", icon: Shield },
-  { name: "WiFi Management", path: "/wifi", icon: Wifi },
-  { name: "Location Boundaries", path: "/locations", icon: MapPin },
-  { name: "Approval Cuti", path: "/approval/cuti", icon: CalendarOff },
-  { name: "Approval Lembur", path: "/approval/lembur", icon: Timer },
-  { name: "Performance", path: "/performance", icon: TrendingUp },
-  // { name: "Payroll", path: "/payroll", icon: Banknote },
-  // { name: "Recruitment", path: "/recruitment", icon: UserPlus },
 ];
 
 const Sidebar: Component = () => {
