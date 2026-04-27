@@ -18,9 +18,13 @@ import Button from "../components/ui/Button";
 import CheckpointForm, { type Checkpoint } from "../components/CheckpointForm";
 import AssignmentForm, { type CreateAssignmentPayload } from "../components/AssignmentForm";
 import ConfirmModal from "../components/ConfirmModal";
-import type Employee from "./Employee";
-
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+interface Employee {
+  id: string;
+  nik: string;
+  full_name: string;
+}
 
 interface Assignment {
   id: string;
@@ -48,9 +52,20 @@ interface ActivePatrol {
   id: string;
   assignee_type: string;
   assignee_id: string;
+  assignee_name?: string;
   start_time: string;
   end_time: string;
   status: string;
+  progress: number;
+  checkpoint_details?: Array<{
+    id: string;
+    name: string;
+    qr_code_id: string;
+    status: "pending" | "visited";
+    scanned_at?: string;
+  }>;
+  area_id?: string;
+  area_name?: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -449,7 +464,7 @@ const Patrol: Component = () => {
         </div>
       </Show>
 
-      {/* ── Live Tracking Map (Prominent) ── */}
+      {/* ── Live Tracking Dashboard (Grouped by Area) ── */}
       <div class="bg-gradient-to-br from-white to-[var(--color-secondary-bg)]/30 p-1 rounded-3xl shadow-lg border border-[var(--color-border)] mb-8">
         <div class="bg-white/60 backdrop-blur-md rounded-[calc(1.5rem-4px)] p-6 flex flex-col min-h-[480px]">
           <div class="flex justify-between items-center mb-6">
@@ -458,51 +473,82 @@ const Patrol: Component = () => {
                 <div class="w-3 h-3 rounded-full bg-red-500 absolute -top-0.5 -right-0.5 animate-ping" />
                 <div class="w-3 h-3 rounded-full bg-red-500 relative" />
               </div>
-              <h3 class="font-black text-xl text-[var(--color-text-primary)] tracking-tight">Geo-Patrol Dashboard</h3>
-            </div>
-            <div class="flex gap-3">
-              <Button variant="outline" size="sm" class="text-[11px] uppercase font-black px-4 py-2 bg-white/50 border-[var(--color-border)] hover:bg-[var(--color-secondary-bg)] transition-all">
-                Optimasi Rute
-              </Button>
-              <Button variant="primary" size="sm" class="text-[11px] uppercase font-black px-4 py-2 shadow-lg shadow-[var(--color-primary-button)]/20">
-                Fokus Petugas
-              </Button>
+              <h3 class="font-black text-xl text-[var(--color-text-primary)] tracking-tight">Geo-Patrol Live Monitor</h3>
             </div>
           </div>
 
-          <div class="bg-[var(--color-secondary-bg)]/20 rounded-2xl border-2 border-[var(--color-border)] flex-1 relative overflow-hidden flex flex-col items-center justify-center text-center p-8">
-            {/* Decorative background pattern */}
-            <div
-              class="absolute inset-0 opacity-[0.05] pointer-events-none"
-              style="background-image: url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M54.826 10.531c1.007 0 1.823-.816 1.823-1.823s-.816-1.823-1.823-1.823-1.823.816-1.823 1.823.816 1.823 1.823 1.823zm-5.046 2.01c.562 0 1.017-.456 1.017-1.017s-.455-1.017-1.017-1.017-1.017.455-1.017 1.017.455 1.017 1.017 1.017zm-1.017 4.024c.562 0 1.017-.455 1.017-1.017s-.455-1.017-1.017-1.017-1.017.455-1.017 1.017.455 1.017 1.017 1.017zm-2.035 2.01c.562 0 1.017-.455 1.017-1.017s-.455-1.017-1.017-1.017-1.017.455-1.017 1.017.455 1.017 1.017 1.017z\' fill=\'%237286d3\' fill-opacity=\'1\' fill-rule=\'evenodd\'/%3E%3C/svg%3E');"
-            />
-            
-            <div class="relative group cursor-pointer">
-              <div class="absolute -inset-8 bg-[var(--color-accent)]/20 rounded-full blur-3xl group-hover:bg-[var(--color-accent)]/30 transition-all duration-500" />
-              <div class="w-32 h-32 bg-white rounded-3xl flex items-center justify-center shadow-2xl border border-[var(--color-border)] relative z-10 rotate-2 group-hover:rotate-0 transition-transform duration-500">
-                <MapPin class="w-16 h-16 text-[var(--color-primary-button)]" />
-              </div>
-            </div>
-            
-            <h4 class="font-black text-[var(--color-text-primary)] text-3xl mb-3 mt-8">Monitoring Real-Time</h4>
-            <p class="text-base text-[var(--color-text-secondary)] max-w-xl leading-relaxed mb-8">
-              Sistem visualisasi patroli aktif. Hubungkan kunci API <span class="font-bold text-[var(--color-primary-button)]">Google Maps</span> atau integrasikan <span class="font-bold text-[var(--color-primary-button)]">Leaflet.js</span> untuk melacak pergerakan petugas dan status titik koordinat secara langsung.
-            </p>
-            
-            <div class="flex flex-wrap justify-center gap-8 bg-white/50 px-8 py-4 rounded-2xl border border-[var(--color-border)] shadow-sm">
-              <div class="flex items-center gap-3">
-                <div class="w-4 h-4 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/30" />
-                <span class="text-xs font-black text-[var(--color-text-primary)] uppercase tracking-wider">Selesai</span>
-              </div>
-              <div class="flex items-center gap-3">
-                <div class="w-4 h-4 rounded-full bg-[var(--color-primary-button)] shadow-lg shadow-[var(--color-primary-button)]/30" />
-                <span class="text-xs font-black text-[var(--color-text-primary)] uppercase tracking-wider">Berjalan</span>
-              </div>
-              <div class="flex items-center gap-3">
-                <div class="w-4 h-4 rounded-full bg-[var(--color-text-tertiary)]" />
-                <span class="text-xs font-black text-[var(--color-text-primary)] uppercase tracking-wider">Menunggu</span>
-              </div>
-            </div>
+          <Show when={activePatrols().length === 0}>
+             <div class="bg-[var(--color-secondary-bg)]/20 rounded-2xl border-2 border-[var(--color-border)] flex-1 flex flex-col items-center justify-center text-center p-8">
+                <MapPin class="w-16 h-16 text-[var(--color-text-tertiary)] mb-4" />
+                <h4 class="font-black text-[var(--color-text-primary)] text-xl mb-2">Tidak Ada Patroli Aktif</h4>
+                <p class="text-sm text-[var(--color-text-secondary)]">Mulai penugasan patroli untuk melihat pergerakan di sini.</p>
+             </div>
+          </Show>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <For each={areas()}>
+              {(area) => {
+                const areaActivePatrols = () => activePatrols().filter(p => p.area_id === area.id || p.checkpoint_details?.some(d => checkpoints().find(c => c.id === d.id)?.area_id === area.id));
+                
+                return (
+                  <Show when={areaActivePatrols().length > 0}>
+                    <div class="space-y-4">
+                      <div class="flex items-center gap-2 px-2">
+                        <div class="w-2 h-2 rounded-full bg-[var(--color-primary-button)]" />
+                        <h4 class="font-black text-xs text-[var(--color-text-primary)] uppercase tracking-widest">{area.name}</h4>
+                      </div>
+                      
+                      <For each={areaActivePatrols()}>
+                        {(patrol) => (
+                          <div class="bg-white rounded-2xl border border-[var(--color-border)] p-4 shadow-sm hover:shadow-md transition-all">
+                            <div class="flex justify-between items-start mb-4">
+                              <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl bg-[var(--color-secondary-bg)] flex items-center justify-center text-[var(--color-primary-button)]">
+                                  {patrol.assignee_type === "group" ? <Users class="w-5 h-5" /> : <User class="w-5 h-5" />}
+                                </div>
+                                <div class="min-w-0">
+                                  <div class="font-black text-sm truncate">{patrol.assignee_name || getAssigneeName(patrol.assignee_type, patrol.assignee_id)}</div>
+                                  <div class="text-[10px] text-[var(--color-text-secondary)] font-bold uppercase">{patrol.start_time} - {patrol.end_time}</div>
+                                </div>
+                              </div>
+                              <div class="text-right">
+                                <div class="text-xs font-black text-[var(--color-primary-button)]">{Math.round(patrol.progress)}%</div>
+                                <div class="text-[9px] text-[var(--color-text-tertiary)] uppercase font-bold">Progres</div>
+                              </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div class="h-1.5 w-full bg-[var(--color-secondary-bg)] rounded-full mb-4 overflow-hidden">
+                              <div 
+                                class="h-full bg-[var(--color-primary-button)] rounded-full transition-all duration-500"
+                                style={`width: ${patrol.progress}%`}
+                              />
+                            </div>
+
+                            {/* Checkpoint Details */}
+                            <div class="space-y-2">
+                              <For each={patrol.checkpoint_details}>
+                                {(cp) => (
+                                  <div class="flex items-center justify-between text-[11px]">
+                                    <div class="flex items-center gap-2 text-[var(--color-text-primary)]">
+                                      <div class={`w-1.5 h-1.5 rounded-full ${cp.status === 'visited' ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                                      <span class={cp.status === 'visited' ? 'font-bold' : ''}>{cp.name}</span>
+                                    </div>
+                                    <Show when={cp.status === 'visited'}>
+                                      <span class="text-[9px] text-emerald-600 font-bold uppercase">Selesai</span>
+                                    </Show>
+                                  </div>
+                                )}
+                              </For>
+                            </div>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                );
+              }}
+            </For>
           </div>
         </div>
       </div>

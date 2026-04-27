@@ -173,8 +173,18 @@ const ShiftManagement: Component = () => {
 
   const fetchEmployeeGroups = async () => {
     try {
-      // Mock data for now - replace with actual API call
-      setEmployeeGroups([]);
+      const response = await fetch(`${BASE_URL}/groups`);
+      const result = await response.json();
+      if (response.ok && result.status === "success") {
+        const mapped = result.data.map((g: any) => ({
+          ...g,
+          employees: (g.employee_ids || []).map((id: string) => {
+             const cleanId = id.includes(":") ? id.split(":")[1] : id;
+             return employees().find(e => e.id === cleanId || e.id === id);
+          }).filter(Boolean)
+        }));
+        setEmployeeGroups(mapped);
+      }
     } catch (err: any) {
       console.error("Failed to fetch employee groups:", err);
     }
@@ -338,17 +348,24 @@ const ShiftManagement: Component = () => {
     setError(null);
 
     try {
-      const newGroup: EmployeeGroup = {
-        id: Date.now().toString(),
-        name: data.name,
-        description: data.description,
-        employees: [], // Start with empty employees
-        created_at: new Date().toISOString(),
-      };
+      const response = await fetch(`${BASE_URL}/groups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description,
+          employee_ids: data.employee_ids,
+        }),
+      });
+      const result = await response.json();
 
-      setEmployeeGroups(prev => [...prev, newGroup]);
-      setShowAddGroupModal(false);
-      resetGroupForm();
+      if (response.ok && result.status === "success") {
+        await fetchEmployeeGroups();
+        setShowAddGroupModal(false);
+        resetGroupForm();
+      } else {
+        setError(result.message || "Failed to create group");
+      }
     } catch (err: any) {
       setError(err.message || "Network error");
     } finally {
@@ -673,34 +690,76 @@ const ShiftManagement: Component = () => {
     e.preventDefault();
   };
 
-  const handleDrop = (groupId: string) => {
+  const handleDrop = async (groupId: string) => {
     const employee = draggedEmployee();
     if (!employee) return;
 
-    // Add employee to the group
-    setEmployeeGroups(prev => prev.map(group => {
-      if (group.id === groupId) {
-        return {
-          ...group,
-          employees: [...group.employees, employee]
-        };
+    const group = employeeGroups().find(g => g.id === groupId);
+    if (!group) return;
+
+    // Check if already in group
+    if (group.employees.some(e => e.id === employee.id)) {
+        setDraggedEmployee(null);
+        return;
+    }
+
+    const newEmployeeIds = [...(group as any).employee_ids, employee.id];
+
+    try {
+      const response = await fetch(`${BASE_URL}/groups/${groupId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employee_ids: newEmployeeIds,
+        }),
+      });
+      if (response.ok) {
+        await fetchEmployeeGroups();
       }
-      return group;
-    }));
+    } catch (err) {
+      console.error("Failed to update group", err);
+    }
 
     setDraggedEmployee(null);
   };
 
-  const removeEmployeeFromGroup = (groupId: string, employeeId: string) => {
-    setEmployeeGroups(prev => prev.map(group => {
-      if (group.id === groupId) {
-        return {
-          ...group,
-          employees: group.employees.filter(emp => emp.id !== employeeId)
-        };
+  const removeEmployeeFromGroup = async (groupId: string, employeeId: string) => {
+    const group = employeeGroups().find(g => g.id === groupId);
+    if (!group) return;
+
+    const newEmployeeIds = (group as any).employee_ids.filter((id: string) => {
+        const cleanId = id.includes(":") ? id.split(":")[1] : id;
+        return cleanId !== employeeId;
+    });
+
+    try {
+      const response = await fetch(`${BASE_URL}/groups/${groupId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employee_ids: newEmployeeIds,
+        }),
+      });
+      if (response.ok) {
+        await fetchEmployeeGroups();
       }
-      return group;
-    }));
+    } catch (err) {
+      console.error("Failed to remove employee from group", err);
+    }
+  };
+
+  const deleteEmployeeGroup = async (groupId: string) => {
+    if (!confirm("Are you sure you want to delete this group?")) return;
+    try {
+      const response = await fetch(`${BASE_URL}/groups/${groupId}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        await fetchEmployeeGroups();
+      }
+    } catch (err) {
+      console.error("Failed to delete group", err);
+    }
   };
 
   return (
@@ -1060,11 +1119,7 @@ const ShiftManagement: Component = () => {
                             </Show>
                           </div>
                           <button
-                            onClick={() => {
-                              if (confirm("Are you sure you want to delete this group?")) {
-                                setEmployeeGroups(prev => prev.filter(g => g.id !== group.id));
-                              }
-                            }}
+                            onClick={() => deleteEmployeeGroup(group.id)}
                             class="text-red-600 hover:text-red-700 p-1 rounded"
                             title="Delete Group"
                           >
