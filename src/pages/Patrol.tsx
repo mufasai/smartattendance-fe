@@ -2,7 +2,6 @@ import { type Component, For, createSignal, onMount, Show } from "solid-js";
 import {
   Plus,
   MapPin,
-  Clock,
   RefreshCw,
   Edit2,
   Trash2,
@@ -18,7 +17,13 @@ import Button from "../components/ui/Button";
 import CheckpointForm, { type Checkpoint } from "../components/CheckpointForm";
 import AssignmentForm, { type CreateAssignmentPayload } from "../components/AssignmentForm";
 import ConfirmModal from "../components/ConfirmModal";
-import type Employee from "./Employee";
+
+// Define Employee interface locally
+interface Employee {
+  id: string;
+  nik: string;
+  full_name: string;
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -164,7 +169,7 @@ const Patrol: Component = () => {
   const confirmDeleteArea = async () => {
     const id = areaToDelete();
     if (!id) return;
-    
+
     setIsLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/patrol/areas/${id}`, { method: "DELETE" });
@@ -173,10 +178,10 @@ const Patrol: Component = () => {
         setAreaToDelete(null);
         await fetchAreas();
       }
-    } catch (err) { 
-      console.error("Gagal hapus area", err); 
-    } finally { 
-      setIsLoading(false); 
+    } catch (err) {
+      console.error("Gagal hapus area", err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -233,7 +238,7 @@ const Patrol: Component = () => {
   const deleteCheckpoint = async () => {
     const id = checkpointToDelete();
     if (!id) return;
-    
+
     setIsLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/patrol/checkpoints/${id}`, { method: "DELETE" });
@@ -372,19 +377,19 @@ const Patrol: Component = () => {
   const getAssigneeName = (type: string, id: string) => {
     if (!id) return "N/A";
     const cleanId = extractId(id).toLowerCase();
-    
+
     if (type === "group") {
       const g = groups().find((x) => extractId(x.id).toLowerCase() === cleanId || x.name.toLowerCase() === cleanId);
       return g ? g.name : `Grup: ${extractId(id)}`;
     }
-    
+
     // Try to find by ID part or by NIK just in case
     const emp = employees().find((e) => {
       const eId = extractId(e.id).toLowerCase();
       const eNik = e.nik?.toLowerCase();
       return eId === cleanId || eNik === cleanId;
     });
-    
+
     return emp ? emp.full_name : (type === "group" ? `Grup: ${extractId(id)}` : `Karyawan: ${extractId(id)}`);
   };
 
@@ -432,8 +437,8 @@ const Patrol: Component = () => {
             <RefreshCw class={`w-4 h-4 ${isLoading() ? "animate-spin" : ""}`} />
             Refresh
           </Button>
-          <Button 
-            class="shadow-lg shadow-[var(--color-primary-button)]/20" 
+          <Button
+            class="shadow-lg shadow-[var(--color-primary-button)]/20"
             onClick={() => setAssignmentModalOpen(true)}
           >
             <Plus class="w-4 h-4" />
@@ -476,19 +481,19 @@ const Patrol: Component = () => {
               class="absolute inset-0 opacity-[0.05] pointer-events-none"
               style="background-image: url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M54.826 10.531c1.007 0 1.823-.816 1.823-1.823s-.816-1.823-1.823-1.823-1.823.816-1.823 1.823.816 1.823 1.823 1.823zm-5.046 2.01c.562 0 1.017-.456 1.017-1.017s-.455-1.017-1.017-1.017-1.017.455-1.017 1.017.455 1.017 1.017 1.017zm-1.017 4.024c.562 0 1.017-.455 1.017-1.017s-.455-1.017-1.017-1.017-1.017.455-1.017 1.017.455 1.017 1.017 1.017zm-2.035 2.01c.562 0 1.017-.455 1.017-1.017s-.455-1.017-1.017-1.017-1.017.455-1.017 1.017.455 1.017 1.017 1.017z\' fill=\'%237286d3\' fill-opacity=\'1\' fill-rule=\'evenodd\'/%3E%3C/svg%3E');"
             />
-            
+
             <div class="relative group cursor-pointer">
               <div class="absolute -inset-8 bg-[var(--color-accent)]/20 rounded-full blur-3xl group-hover:bg-[var(--color-accent)]/30 transition-all duration-500" />
               <div class="w-32 h-32 bg-white rounded-3xl flex items-center justify-center shadow-2xl border border-[var(--color-border)] relative z-10 rotate-2 group-hover:rotate-0 transition-transform duration-500">
                 <MapPin class="w-16 h-16 text-[var(--color-primary-button)]" />
               </div>
             </div>
-            
+
             <h4 class="font-black text-[var(--color-text-primary)] text-3xl mb-3 mt-8">Monitoring Real-Time</h4>
             <p class="text-base text-[var(--color-text-secondary)] max-w-xl leading-relaxed mb-8">
               Sistem visualisasi patroli aktif. Hubungkan kunci API <span class="font-bold text-[var(--color-primary-button)]">Google Maps</span> atau integrasikan <span class="font-bold text-[var(--color-primary-button)]">Leaflet.js</span> untuk melacak pergerakan petugas dan status titik koordinat secara langsung.
             </p>
-            
+
             <div class="flex flex-wrap justify-center gap-8 bg-white/50 px-8 py-4 rounded-2xl border border-[var(--color-border)] shadow-sm">
               <div class="flex items-center gap-3">
                 <div class="w-4 h-4 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/30" />
@@ -510,7 +515,7 @@ const Patrol: Component = () => {
 
       {/* ── 3-Column Integrated Content Grid ── */}
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-        
+
         {/* ── COL 1: Summaries (Span 3) ── */}
         <div class="lg:col-span-3 flex flex-col gap-6">
           <div class="bg-white p-6 rounded-3xl shadow-sm border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-colors">
@@ -546,9 +551,9 @@ const Patrol: Component = () => {
                   {(patrol) => (
                     <div class="p-3 rounded-2xl bg-white border border-[var(--color-border)] shadow-sm flex items-center gap-3">
                       <div class="w-8 h-8 rounded-full bg-[var(--color-secondary-bg)] flex items-center justify-center text-[var(--color-primary-button)]">
-                         <Show when={patrol.assignee_type === "group"} fallback={<User class="w-4 h-4" />}>
-                           <Users class="w-4 h-4" />
-                         </Show>
+                        <Show when={patrol.assignee_type === "group"} fallback={<User class="w-4 h-4" />}>
+                          <Users class="w-4 h-4" />
+                        </Show>
                       </div>
                       <div class="min-w-0">
                         <div class="text-xs font-black truncate">{getAssigneeName(patrol.assignee_type, patrol.assignee_id)}</div>
@@ -620,7 +625,7 @@ const Patrol: Component = () => {
                   );
                 }}
               </For>
-              
+
               {/* Un-grouped checkpoints */}
               <Show when={checkpoints().filter(c => !c.area_id || c.area_id === "").length > 0}>
                 <div class="space-y-3">
@@ -659,9 +664,9 @@ const Patrol: Component = () => {
               Jadwal Patroli
             </h3>
             <Show when={assignments().filter(a => a.status !== "completed").length === 0}>
-               <div class="py-8 text-center bg-[var(--color-primary-bg)]/50 rounded-2xl border border-dashed border-[var(--color-border)]">
-                 <p class="text-xs font-bold text-[var(--color-text-tertiary)] uppercase">Tidak ada jadwal aktif</p>
-               </div>
+              <div class="py-8 text-center bg-[var(--color-primary-bg)]/50 rounded-2xl border border-dashed border-[var(--color-border)]">
+                <p class="text-xs font-bold text-[var(--color-text-tertiary)] uppercase">Tidak ada jadwal aktif</p>
+              </div>
             </Show>
             <div class="space-y-4 overflow-y-auto custom-scrollbar max-h-[320px]">
               <For each={assignments().filter(a => a.status !== "completed")}>
@@ -670,9 +675,9 @@ const Patrol: Component = () => {
                     <div class="flex justify-between items-start mb-3">
                       <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-2xl bg-[var(--color-secondary-bg)] flex items-center justify-center text-[var(--color-primary-button)]">
-                           <Show when={a.assignee_type === "group"} fallback={<Users class="w-5 h-5" />}>
-                             <LayoutGrid class="w-5 h-5" />
-                           </Show>
+                          <Show when={a.assignee_type === "group"} fallback={<Users class="w-5 h-5" />}>
+                            <LayoutGrid class="w-5 h-5" />
+                          </Show>
                         </div>
                         <div>
                           <div class="font-black text-sm">{getAssigneeName(a.assignee_type, a.assignee_id)}</div>
@@ -705,9 +710,9 @@ const Patrol: Component = () => {
             </h3>
             <div class="space-y-2 max-h-[170px] overflow-y-auto custom-scrollbar">
               <Show when={assignments().filter(a => a.status === "completed").length === 0}>
-                 <div class="py-10 text-center border border-dashed border-[var(--color-border)] rounded-2xl bg-white/20">
-                   <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Belum ada riwayat patroli</p>
-                 </div>
+                <div class="py-10 text-center border border-dashed border-[var(--color-border)] rounded-2xl bg-white/20">
+                  <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Belum ada riwayat patroli</p>
+                </div>
               </Show>
               <For each={assignments().filter(a => a.status === "completed")}>
                 {(a) => (
@@ -741,21 +746,19 @@ const Patrol: Component = () => {
           <div class="flex p-1 bg-[var(--color-light-gray)] rounded-2xl border border-[var(--color-border)]">
             <button
               onClick={() => setConfigActiveTab("checkpoint")}
-              class={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                configActiveTab() === "checkpoint"
-                  ? "bg-white text-[var(--color-primary-button)] shadow-md"
-                  : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-              }`}
+              class={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${configActiveTab() === "checkpoint"
+                ? "bg-white text-[var(--color-primary-button)] shadow-md"
+                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                }`}
             >
               Titik Rute
             </button>
             <button
               onClick={() => setConfigActiveTab("area")}
-              class={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                configActiveTab() === "area"
-                  ? "bg-white text-[var(--color-primary-button)] shadow-md"
-                  : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-              }`}
+              class={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${configActiveTab() === "area"
+                ? "bg-white text-[var(--color-primary-button)] shadow-md"
+                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                }`}
             >
               Area Grouping
             </button>
@@ -796,14 +799,14 @@ const Patrol: Component = () => {
                             <span class="text-sm font-black text-[var(--color-text-primary)]">{a.name}</span>
                           </div>
                           <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
-                              onClick={() => { setEditingArea(a); setAreaName(a.name); }} 
+                            <button
+                              onClick={() => { setEditingArea(a); setAreaName(a.name); }}
                               class="p-2 text-[var(--color-primary-button)] hover:bg-[var(--color-secondary-bg)] rounded-xl transition-colors"
                             >
                               <Edit2 class="w-4 h-4" />
                             </button>
-                            <button 
-                              onClick={() => openDeleteAreaConfirm(a.id)} 
+                            <button
+                              onClick={() => openDeleteAreaConfirm(a.id)}
                               class="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
                             >
                               <Trash2 class="w-4 h-4" />
@@ -814,7 +817,7 @@ const Patrol: Component = () => {
                     </For>
                   </div>
                 </div>
-                
+
                 <div class="p-6 rounded-3xl bg-white border-2 border-[var(--color-accent)]/10 shadow-xl shadow-[var(--color-accent)]/5 space-y-4">
                   <div class="flex items-center justify-between">
                     <h4 class="text-xs font-black text-[var(--color-accent)] uppercase tracking-widest">
@@ -824,11 +827,11 @@ const Patrol: Component = () => {
                       <button onClick={() => { setEditingArea(null); setAreaName(""); }} class="text-[10px] font-bold text-gray-400 hover:text-red-500 uppercase">Batal</button>
                     </Show>
                   </div>
-                  
+
                   <div class="relative">
-                    <input 
-                      type="text" 
-                      placeholder="Nama Area (Contoh: Area Warehouse)" 
+                    <input
+                      type="text"
+                      placeholder="Nama Area (Contoh: Area Warehouse)"
                       class="w-full px-5 py-3 bg-[var(--color-secondary-bg)]/30 border-2 border-transparent focus:border-[var(--color-accent)] focus:bg-white rounded-2xl text-sm font-bold transition-all outline-none"
                       value={areaName()}
                       onInput={(e) => setAreaName(e.currentTarget.value)}
@@ -838,8 +841,8 @@ const Patrol: Component = () => {
                     </div>
                   </div>
 
-                  <Button 
-                    class="w-full py-4 rounded-2xl shadow-lg shadow-[var(--color-accent)]/20 font-black uppercase text-xs tracking-widest" 
+                  <Button
+                    class="w-full py-4 rounded-2xl shadow-lg shadow-[var(--color-accent)]/20 font-black uppercase text-xs tracking-widest"
                     onClick={() => {
                       if (areaName()) saveArea({ name: areaName(), description: "" });
                     }}

@@ -3,15 +3,9 @@ import { A, useNavigate } from "@solidjs/router";
 import {
   LayoutDashboard,
   Users,
-  Clock,
-  CalendarOff,
-  Timer,
-  TrendingUp,
   LogOut,
   CalendarClock,
   Shield,
-  Wifi,
-  MapPin,
 } from "lucide-solid";
 import auth from "../store/auth";
 
