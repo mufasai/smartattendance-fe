@@ -17,6 +17,8 @@ import Button from "../components/ui/Button";
 import CheckpointForm, { type Checkpoint } from "../components/CheckpointForm";
 import AssignmentForm, { type CreateAssignmentPayload } from "../components/AssignmentForm";
 import ConfirmModal from "../components/ConfirmModal";
+import config from "../config/env";
+
 
 // Define Employee interface locally
 interface Employee {
@@ -60,7 +62,7 @@ interface ActivePatrol {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const BASE_URL = "http://127.0.0.1:8080/api";
+const BASE_URL = `${config.apiUrl}`;
 
 /** Extract string ID from SurrealDB Thing format (returns only the ID part) */
 const extractId = (raw: any): string => {
