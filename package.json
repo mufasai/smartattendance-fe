@@ -13,7 +13,8 @@
     "@tailwindcss/vite": "^4.2.2",
     "lucide-solid": "^0.577.0",
     "solid-js": "^1.9.5",
-    "tailwindcss": "^4.2.2"
+    "tailwindcss": "^4.2.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "typescript": "~5.8.3",
