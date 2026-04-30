@@ -271,10 +271,16 @@ const EmployeeManagement: Component = () => {
       const result = text ? JSON.parse(text) : { status: "error", message: "Empty response" };
 
       if (response.ok && result.status === "success") {
-        setSuccess("Employee created successfully");
+        // Close modal and reset form first
         setShowAddModal(false);
         resetForm();
-        fetchEmployees();
+        setError(null);
+        
+        // Fetch updated data with force refresh
+        await fetchEmployees(true);
+        
+        // Show success message after modal is closed
+        setSuccess("Employee created successfully");
         setTimeout(() => setSuccess(null), 3000);
       } else {
         setError(result.message || "Failed to create employee");
@@ -308,10 +314,16 @@ const EmployeeManagement: Component = () => {
       const result = text ? JSON.parse(text) : { status: "error", message: "Empty response" };
 
       if (response.ok && result.status === "success") {
-        setSuccess("Employee updated successfully");
+        // Close modal and reset state first
         setShowEditModal(false);
         setEditingEmployee(null);
-        fetchEmployees();
+        setError(null);
+        
+        // Fetch updated data with force refresh
+        await fetchEmployees(true);
+        
+        // Show success message after modal is closed
+        setSuccess("Employee updated successfully");
         setTimeout(() => setSuccess(null), 3000);
       } else {
         setError(result.message || "Failed to update employee");
@@ -339,8 +351,11 @@ const EmployeeManagement: Component = () => {
       const result = text ? JSON.parse(text) : { status: "error", message: "Empty response" };
 
       if (response.ok && result.status === "success") {
+        // Fetch updated data with force refresh
+        await fetchEmployees(true);
+        
+        // Show success message
         setSuccess("Employee deleted successfully");
-        fetchEmployees();
         setTimeout(() => setSuccess(null), 3000);
       } else {
         setError(result.message || "Failed to delete employee");
@@ -463,10 +478,16 @@ const EmployeeManagement: Component = () => {
       const result = text ? JSON.parse(text) : { status: "error" };
 
       if (response.ok && result.status === "success") {
-        setSuccess(`Attendance requirements updated for ${niks.length} employees`);
+        // Close modal and clear selection first
         setShowBulkAttendanceModal(false);
         setSelectedEmployees(new Set<string>());
-        fetchEmployees();
+        setError(null);
+        
+        // Fetch updated data with force refresh
+        await fetchEmployees(true);
+        
+        // Show success message after modal is closed
+        setSuccess(`Attendance requirements updated for ${niks.length} employees`);
         setTimeout(() => setSuccess(null), 3000);
       } else {
         setError(result.message || "Failed to update attendance requirements");
@@ -563,20 +584,20 @@ const EmployeeManagement: Component = () => {
 
     try {
       const employees = preview.map((row: any) => ({
-        nik: row.NIK || row.nik,
-        full_name: row["Full Name"] || row.full_name,
-        email: row.Email || row.email,
-        password: row.Password || row.password || "default123",
-        role: row.Role || row.role || "employee",
-        department: row.Department || row.department || "General",
-        status: row.Status || row.status || "Active",
-        phone: row.Phone || row.phone || "",
-        address: row.Address || row.address || "",
-        date_of_birth: row["Date of Birth"] || row.date_of_birth || "",
-        hire_date: row["Hire Date"] || row.hire_date || "",
-        position: row.Position || row.position || "",
-        emergency_contact: row["Emergency Contact"] || row.emergency_contact || "",
-        emergency_phone: row["Emergency Phone"] || row.emergency_phone || "",
+        nik: String(row.NIK || row.nik || ""),
+        full_name: String(row["Full Name"] || row.full_name || ""),
+        email: String(row.Email || row.email || ""),
+        password: String(row.Password || row.password || "default123"),
+        role: String(row.Role || row.role || "employee"),
+        department: String(row.Department || row.department || "General"),
+        status: String(row.Status || row.status || "Active"),
+        phone: String(row.Phone || row.phone || ""),
+        address: String(row.Address || row.address || ""),
+        date_of_birth: String(row["Date of Birth"] || row.date_of_birth || ""),
+        hire_date: String(row["Hire Date"] || row.hire_date || ""),
+        position: String(row.Position || row.position || ""),
+        emergency_contact: String(row["Emergency Contact"] || row.emergency_contact || ""),
+        emergency_phone: String(row["Emergency Phone"] || row.emergency_phone || ""),
       }));
 
       const response = await fetch(`${BASE_URL}/employees/bulk`, {
@@ -589,11 +610,17 @@ const EmployeeManagement: Component = () => {
       const result = text ? JSON.parse(text) : { status: "error" };
 
       if (response.ok && result.status === "success") {
-        setSuccess(`Successfully imported ${employees.length} employees`);
+        // Close modal and reset state first
         setShowImportModal(false);
         setImportFile(null);
         setImportPreview([]);
-        fetchEmployees();
+        setError(null);
+        
+        // Fetch updated data with force refresh
+        await fetchEmployees(true);
+        
+        // Show success message after modal is closed
+        setSuccess(`Successfully imported ${employees.length} employees`);
         setTimeout(() => setSuccess(null), 3000);
       } else {
         setError(result.message || "Failed to import employees");
@@ -696,6 +723,7 @@ const EmployeeManagement: Component = () => {
             <option value="Marketing">Marketing</option>
             <option value="Human Resources">Human Resources</option>
             <option value="Finance">Finance</option>
+            <option value="Security Department">Security Department</option>
             <option value="General">General</option>
           </select>
           <select
@@ -1060,6 +1088,7 @@ const EmployeeManagement: Component = () => {
                     <option value="Marketing">Marketing</option>
                     <option value="Human Resources">Human Resources</option>
                     <option value="Finance">Finance</option>
+                    <option value="Security Department">Security Department</option>
                   </select>
                 </div>
 
@@ -1341,6 +1370,7 @@ const EmployeeManagement: Component = () => {
                     <option value="Marketing">Marketing</option>
                     <option value="Human Resources">Human Resources</option>
                     <option value="Finance">Finance</option>
+                    <option value="Security Department">Security Department</option>
                   </select>
                 </div>
 
@@ -1359,6 +1389,120 @@ const EmployeeManagement: Component = () => {
                     <option value="On Leave">On Leave</option>
                     <option value="Inactive">Inactive</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Enriched Fields Section */}
+              <div class="border-t border-[var(--color-border)] pt-4 mt-4">
+                <h4 class="text-sm font-bold text-[var(--color-text-primary)] mb-4">Additional Information</h4>
+                
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                      Phone
+                    </label>
+                    <input
+                      type="tel"
+                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                      placeholder="e.g., +1234567890"
+                      value={editFormData().phone}
+                      onInput={(e) =>
+                        setEditFormData((prev) => ({ ...prev, phone: e.currentTarget.value }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                      Position
+                    </label>
+                    <input
+                      type="text"
+                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                      placeholder="e.g., Software Engineer"
+                      value={editFormData().position}
+                      onInput={(e) =>
+                        setEditFormData((prev) => ({ ...prev, position: e.currentTarget.value }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                    Address
+                  </label>
+                  <textarea
+                    class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white resize-none"
+                    placeholder="Full address"
+                    rows="2"
+                    value={editFormData().address}
+                    onInput={(e) =>
+                      setEditFormData((prev) => ({ ...prev, address: e.currentTarget.value }))
+                    }
+                  />
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                      Date of Birth
+                    </label>
+                    <input
+                      type="date"
+                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                      value={editFormData().date_of_birth}
+                      onInput={(e) =>
+                        setEditFormData((prev) => ({ ...prev, date_of_birth: e.currentTarget.value }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                      Hire Date
+                    </label>
+                    <input
+                      type="date"
+                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                      value={editFormData().hire_date}
+                      onInput={(e) =>
+                        setEditFormData((prev) => ({ ...prev, hire_date: e.currentTarget.value }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                      Emergency Contact Name
+                    </label>
+                    <input
+                      type="text"
+                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                      placeholder="e.g., Jane Doe"
+                      value={editFormData().emergency_contact}
+                      onInput={(e) =>
+                        setEditFormData((prev) => ({ ...prev, emergency_contact: e.currentTarget.value }))
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                      Emergency Contact Phone
+                    </label>
+                    <input
+                      type="tel"
+                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                      placeholder="e.g., +0987654321"
+                      value={editFormData().emergency_phone}
+                      onInput={(e) =>
+                        setEditFormData((prev) => ({ ...prev, emergency_phone: e.currentTarget.value }))
+                      }
+                    />
+                  </div>
                 </div>
               </div>
             </div>
