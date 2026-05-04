@@ -1,4 +1,20 @@
-import { type Component, For, createSignal, onMount, Show } from "solid-js";
+import { type Component, For, createSignal, createEffect, onMount, onCleanup, Show } from "solid-js";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Fix Leaflet default icon path for Vite
+import iconUrl from "leaflet/dist/images/marker-icon.png";
+import shadowUrl from "leaflet/dist/images/marker-shadow.png";
+
+const DefaultIcon = L.icon({
+  iconUrl,
+  shadowUrl,
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  tooltipAnchor: [16, -28],
+  shadowSize: [41, 41],
+});
+L.Marker.prototype.options.icon = DefaultIcon;
 import {
   Plus,
   Search,
@@ -11,6 +27,8 @@ import {
   Edit,
   Save,
   Navigation,
+  Maximize,
+  Minimize,
 } from "lucide-solid";
 
 interface LocationBoundary {
@@ -24,6 +42,145 @@ interface LocationBoundary {
   created_at?: string;
   updated_at?: string;
 }
+
+const MapPicker: Component<{
+  lat: number;
+  lng: number;
+  radius: number;
+  onLocationChange: (lat: number, lng: number) => void;
+}> = (props) => {
+  const [isFullscreen, setIsFullscreen] = createSignal(false);
+  let mapContainer!: HTMLDivElement;
+  let map: L.Map;
+  let marker: L.Marker;
+  let circle: L.Circle;
+
+  onMount(() => {
+    map = L.map(mapContainer).setView([props.lat, props.lng], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors",
+    }).addTo(map);
+
+    marker = L.marker([props.lat, props.lng], { draggable: true }).addTo(map);
+    circle = L.circle([props.lat, props.lng], {
+      radius: props.radius,
+      color: "#3b82f6",
+      fillColor: "#3b82f6",
+      fillOpacity: 0.2,
+      weight: 2,
+    }).addTo(map);
+
+    marker.on("dragend", (e) => {
+      const position = marker.getLatLng();
+      props.onLocationChange(position.lat, position.lng);
+    });
+
+    let isMounted = true;
+
+    // Fix map rendering issues inside modals
+    setTimeout(() => {
+      if (isMounted && map) {
+        try {
+          map.invalidateSize();
+        } catch (e) {}
+      }
+    }, 100);
+
+    onCleanup(() => {
+      isMounted = false;
+      if (map) {
+        map.remove();
+      }
+    });
+  });
+
+  createEffect(() => {
+    if (marker && circle && map) {
+      const latlng = L.latLng(props.lat, props.lng);
+      marker.setLatLng(latlng);
+      circle.setLatLng(latlng);
+      circle.setRadius(props.radius);
+      // Smoothly pan to new location if it changes
+      map.panTo(latlng);
+    }
+  });
+
+  createEffect(() => {
+    let active = true;
+    // When isFullscreen toggles, we need to invalidate the map size
+    // after the CSS transition completes to prevent rendering bugs
+    if (isFullscreen() || !isFullscreen()) {
+      setTimeout(() => {
+        if (active && map) {
+          try {
+            map.invalidateSize();
+          } catch (e) {}
+        }
+      }, 300);
+    }
+    onCleanup(() => {
+      active = false;
+    });
+  });
+
+  return (
+    <div class={`transition-all duration-300 ${isFullscreen() ? "fixed inset-4 sm:inset-12 z-[9999] bg-gray-50 rounded-2xl shadow-2xl p-2 flex flex-col border border-gray-300" : "relative w-full h-64 sm:h-80"}`}>
+      <div ref={mapContainer} class={`w-full h-full rounded-xl border border-[var(--color-border)] z-10 shadow-inner ${isFullscreen() ? "flex-1" : ""}`} />
+      
+      <button 
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          setIsFullscreen(!isFullscreen());
+        }}
+        class="absolute top-4 right-4 z-[1000] bg-white p-2.5 rounded-xl shadow-md border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
+        title={isFullscreen() ? "Exit full screen" : "Full screen map"}
+      >
+        {isFullscreen() ? <Minimize class="w-5 h-5"/> : <Maximize class="w-5 h-5"/>}
+      </button>
+
+      {isFullscreen() && (
+        <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-white/90 backdrop-blur px-6 py-3 rounded-2xl shadow-lg border border-gray-200 text-sm font-semibold text-gray-800 flex items-center gap-3">
+          <MapPin class="w-5 h-5 text-blue-600" />
+          Drag the blue marker to pinpoint the exact location
+        </div>
+      )}
+    </div>
+  );
+};
+
+const StaticMiniMap: Component<{ lat: number; lng: number; radius: number }> = (props) => {
+  let mapContainer!: HTMLDivElement;
+  let map: L.Map;
+
+  onMount(() => {
+    map = L.map(mapContainer, {
+      zoomControl: false,
+      dragging: false,
+      scrollWheelZoom: false,
+      doubleClickZoom: false,
+      boxZoom: false,
+      keyboard: false,
+    }).setView([props.lat, props.lng], 16);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    L.marker([props.lat, props.lng]).addTo(map);
+    L.circle([props.lat, props.lng], {
+      radius: props.radius,
+      color: "#10b981", // green-500
+      fillColor: "#10b981",
+      fillOpacity: 0.2,
+      weight: 2,
+    }).addTo(map);
+
+    onCleanup(() => {
+      map.remove();
+    });
+  });
+
+  return <div ref={mapContainer} class="w-full h-32 rounded-lg border border-[var(--color-border)] z-0 pointer-events-none mt-2 shadow-inner" />;
+};
 
 const LocationManagement: Component = () => {
   const [searchTerm, setSearchTerm] = createSignal("");
@@ -455,6 +612,12 @@ const LocationManagement: Component = () => {
                       }
                       placeholder="Description"
                     />
+                    <MapPicker
+                      lat={editFormData().latitude}
+                      lng={editFormData().longitude}
+                      radius={editFormData().radius}
+                      onLocationChange={(lat, lng) => setEditFormData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
+                    />
                     <div class="grid grid-cols-2 gap-2">
                       <input
                         type="number"
@@ -514,10 +677,9 @@ const LocationManagement: Component = () => {
                       </div>
                     </div>
 
-                    <div class="text-xs text-[var(--color-text-secondary)] space-y-1 bg-gray-50 p-3 rounded-lg">
-                      <div>Lat: {location.latitude.toFixed(6)}</div>
-                      <div>Lon: {location.longitude.toFixed(6)}</div>
-                      <div class="font-semibold text-[var(--color-primary-button)]">
+                    <div class="text-xs text-[var(--color-text-secondary)] bg-gray-50 p-2 rounded-xl">
+                      <StaticMiniMap lat={location.latitude} lng={location.longitude} radius={location.radius} />
+                      <div class="mt-2 text-center font-semibold text-[var(--color-primary-button)]">
                         Radius: {location.radius}m
                       </div>
                     </div>
@@ -576,7 +738,7 @@ const LocationManagement: Component = () => {
       {/* Add Location Modal */}
       <Show when={showAddModal()}>
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+          <div class="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div class="border-b border-[var(--color-border)] p-6 flex justify-between items-center">
               <h3 class="text-xl font-bold text-[var(--color-text-primary)]">
                 Add New Location Boundary
@@ -624,6 +786,21 @@ const LocationManagement: Component = () => {
                       description: e.currentTarget.value,
                     }))
                   }
+                />
+              </div>
+
+              <div class="mb-2 pt-2 border-t border-[var(--color-border)]">
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-1">
+                  Location Map
+                </label>
+                <p class="text-xs text-[var(--color-text-secondary)] mb-3">
+                  Drag the blue marker to pinpoint the location. The circle shows your coverage area.
+                </p>
+                <MapPicker
+                  lat={formData().latitude}
+                  lng={formData().longitude}
+                  radius={formData().radius}
+                  onLocationChange={(lat, lng) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
                 />
               </div>
 
