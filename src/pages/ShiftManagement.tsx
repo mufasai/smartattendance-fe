@@ -52,18 +52,283 @@ const ShiftManagement: Component = () => {
             created_at: new Date().toISOString(),
         },
         {
-            id: "3",
-            name: "Security Factory Sukabumi",
-            department: "Security",
-            working_location: "Factory Sukabumi",
-            shift_type: "3 Sesi",
-            number_of_groups: 4,
-            schedules: [
-                { shift_number: 1, start_time: "07:00", end_time: "15:00" },
-                { shift_number: 2, start_time: "15:00", end_time: "23:00" },
-                { shift_number: 3, start_time: "23:00", end_time: "07:00" },
-            ],
-            created_at: new Date().toISOString(),
+          id: "3",
+          name: "Shift 3",
+          start_time: "22:00",
+          end_time: "06:00",
+          description: "Shift malam untuk keamanan gedung",
+          created_at: new Date().toISOString(),
+        },
+      ]);
+    } catch (err: any) {
+      console.error("Failed to fetch shift types:", err);
+    }
+  };
+
+  const fetchEmployeeGroups = async () => {
+    try {
+      // Mock data for now - replace with actual API call
+      setEmployeeGroups([]);
+    } catch (err: any) {
+      console.error("Failed to fetch employee groups:", err);
+    }
+  };
+
+  const fetchShiftAssignments = async () => {
+    try {
+      // Mock data for now - replace with actual API call
+      setShiftAssignments([]);
+    } catch (err: any) {
+      console.error("Failed to fetch shift assignments:", err);
+    }
+  };
+
+  const fetchShifts = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${BASE_URL}/shift/all`);
+      const result = await response.json();
+
+      if (response.ok && result.status === "success") {
+        const mappedData = result.data.map((item: any) => ({
+          ...item,
+          id: item.id?.id?.String || item.id?.id || item.id,
+          employee_id:
+            item.employee_id?.id?.String ||
+            item.employee_id?.id ||
+            item.employee_id,
+        }));
+        setShifts(mappedData);
+      } else {
+        setError(result.message || "Failed to fetch shifts");
+      }
+    } catch (err: any) {
+      setError(err.message || "Network error. Is the backend running?");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchEmployees = async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/employees`);
+      const result = await response.json();
+
+      if (response.ok && result.status === "success") {
+        const mappedData = result.data.map((item: any) => ({
+          id: item.id?.id?.String || item.id?.id || item.id,
+          nik: item.nik,
+          full_name: item.full_name,
+        }));
+        setEmployees(mappedData);
+      } else {
+        // If API fails, use dummy data for testing
+        setEmployees([
+          { id: "1", nik: "001", full_name: "Agus Santoso" },
+          { id: "2", nik: "002", full_name: "Budi Prasetyo" },
+          { id: "3", nik: "003", full_name: "Catur Wibowo" },
+          { id: "4", nik: "004", full_name: "Dodik Setiawan" },
+          { id: "5", nik: "005", full_name: "Eko Susanto" },
+          { id: "6", nik: "006", full_name: "Fajar Rahman" },
+        ]);
+      }
+    } catch (err: any) {
+      console.error("Failed to fetch employees:", err);
+      // If network error, use dummy data for testing
+      setEmployees([
+        { id: "1", nik: "001", full_name: "Agus Santoso" },
+        { id: "2", nik: "002", full_name: "Budi Prasetyo" },
+        { id: "3", nik: "003", full_name: "Catur Wibowo" },
+        { id: "4", nik: "004", full_name: "Dodik Setiawan" },
+        { id: "5", nik: "005", full_name: "Eko Susanto" },
+        { id: "6", nik: "006", full_name: "Fajar Rahman" },
+      ]);
+    }
+  };
+
+  onMount(() => {
+    fetchShifts();
+    fetchEmployees();
+    fetchShiftTypes();
+    fetchEmployeeGroups();
+    fetchShiftAssignments();
+  });
+
+  // Create functions
+  const createShiftType = async () => {
+    const data = shiftTypeForm();
+    if (!data.name || !data.start_time || !data.end_time) {
+      setError("Please fill all required fields");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const newShiftType: ShiftType = {
+        id: Date.now().toString(),
+        name: data.name,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        description: data.description,
+        created_at: new Date().toISOString(),
+      };
+
+      setShiftTypes(prev => [...prev, newShiftType]);
+      setShowAddShiftTypeModal(false);
+      resetShiftTypeForm();
+    } catch (err: any) {
+      setError(err.message || "Network error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const editShiftType = async () => {
+    const data = shiftTypeForm();
+    const editing = editingShiftType();
+
+    if (!data.name || !data.start_time || !data.end_time || !editing) {
+      setError("Please fill all required fields");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const updatedShiftType: ShiftType = {
+        ...editing,
+        name: data.name,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        description: data.description,
+      };
+
+      setShiftTypes(prev => prev.map(st =>
+        st.id === editing.id ? updatedShiftType : st
+      ));
+
+      setShowEditShiftTypeModal(false);
+      setEditingShiftType(null);
+      resetShiftTypeForm();
+    } catch (err: any) {
+      setError(err.message || "Network error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const createEmployeeGroup = async () => {
+    const data = groupForm();
+    if (!data.name) {
+      setError("Please fill group name");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const newGroup: EmployeeGroup = {
+        id: Date.now().toString(),
+        name: data.name,
+        description: data.description,
+        employees: [], // Start with empty employees
+        created_at: new Date().toISOString(),
+      };
+
+      setEmployeeGroups(prev => [...prev, newGroup]);
+      setShowAddGroupModal(false);
+      resetGroupForm();
+    } catch (err: any) {
+      setError(err.message || "Network error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const assignShiftToGroup = async () => {
+    const data = assignmentForm();
+    if (!data.group_id || !data.shift_type_id || !data.date || !data.location) {
+      setError("Please fill all required fields");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const group = employeeGroups().find(g => g.id === data.group_id);
+      const shiftType = shiftTypes().find(st => st.id === data.shift_type_id);
+
+      if (!group || !shiftType) {
+        setError("Invalid group or shift type selected");
+        return;
+      }
+
+      const newAssignment: ShiftAssignment = {
+        id: Date.now().toString(),
+        group_id: data.group_id,
+        group_name: group.name,
+        shift_type_id: data.shift_type_id,
+        shift_type_name: shiftType.name,
+        date: data.date,
+        location: data.location,
+        tasks: data.tasks.filter(t => t.trim() !== ""),
+        status: "SCHEDULED",
+        notes: data.notes || null,
+        created_at: new Date().toISOString(),
+      };
+
+      // Create individual shift schedules in backend
+      const shiftPromises = group.employees.map(emp => 
+        fetch(`${BASE_URL}/shift`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nik: emp.nik,
+            shift_type: shiftType.name,
+            date: data.date,
+            start_time: shiftType.start_time,
+            end_time: shiftType.end_time,
+            location: data.location,
+            tasks: data.tasks.filter(t => t.trim() !== ""),
+            notes: data.notes || null,
+          }),
+        })
+      );
+
+      await Promise.all(shiftPromises);
+
+      setShiftAssignments(prev => [...prev, newAssignment]);
+      setShowAssignShiftModal(false);
+      resetAssignmentForm();
+      fetchShifts(); // Sync Active Shifts tab
+    } catch (err: any) {
+      setError(err.message || "Network error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const createShift = async () => {
+    const data = formData();
+    if (!data.nik || !data.shift_type_id || !data.date || !data.location) {
+      setError("Please fill all required fields");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${BASE_URL}/shift`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
     ]);
 

@@ -1,22 +1,23 @@
 import { type Component, createSignal, Show, lazy } from "solid-js";
-import { Users, Settings } from "lucide-solid";
+import { Users, Wifi, MapPin } from "lucide-solid";
 
 // Lazy load components
 const EmployeeManagement = lazy(() => import("../components/EmployeeManagement"));
-const AttendanceConfiguration = lazy(() => import("../components/AttendanceConfiguration"));
+const WiFiManagement = lazy(() => import("../components/WiFiManagement"));
+const LocationManagement = lazy(() => import("../components/LocationManagement"));
 
 const Employee: Component = () => {
-  const [activeTab, setActiveTab] = createSignal<"employees" | "configuration">("employees");
+  const [activeTab, setActiveTab] = createSignal<"employees" | "wifi" | "location">("employees");
 
   return (
     <div class="space-y-6">
       {/* Header */}
-      <div>
-        <h2 class="text-2xl font-bold text-[var(--color-text-primary)]">
+      <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-100">
+        <h2 class="text-3xl font-bold text-[var(--color-text-primary)] mb-2">
           Employee & Attendance Management
         </h2>
         <p class="text-sm text-[var(--color-text-secondary)]">
-          Manage employees and configure attendance requirements
+          Comprehensive employee management with attendance configuration
         </p>
       </div>
 
@@ -32,18 +33,32 @@ const Employee: Component = () => {
             }`}
           >
             <Users class="w-5 h-5" />
-            Employee Management
+            <span class="hidden sm:inline">Employee Management</span>
+            <span class="sm:hidden">Employees</span>
           </button>
           <button
-            onClick={() => setActiveTab("configuration")}
+            onClick={() => setActiveTab("wifi")}
             class={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all ${
-              activeTab() === "configuration"
+              activeTab() === "wifi"
                 ? "bg-[var(--color-primary-button)] text-white shadow-md"
                 : "text-[var(--color-text-secondary)] hover:bg-[var(--color-light-gray)]"
             }`}
           >
-            <Settings class="w-5 h-5" />
-            Attendance Configuration
+            <Wifi class="w-5 h-5" />
+            <span class="hidden sm:inline">WiFi Settings</span>
+            <span class="sm:hidden">WiFi</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("location")}
+            class={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all ${
+              activeTab() === "location"
+                ? "bg-[var(--color-primary-button)] text-white shadow-md"
+                : "text-[var(--color-text-secondary)] hover:bg-[var(--color-light-gray)]"
+            }`}
+          >
+            <MapPin class="w-5 h-5" />
+            <span class="hidden sm:inline">Location Boundaries</span>
+            <span class="sm:hidden">Location</span>
           </button>
         </div>
       </div>
@@ -52,8 +67,11 @@ const Employee: Component = () => {
       <Show when={activeTab() === "employees"}>
         <EmployeeManagement />
       </Show>
-      <Show when={activeTab() === "configuration"}>
-        <AttendanceConfiguration />
+      <Show when={activeTab() === "wifi"}>
+        <WiFiManagement />
+      </Show>
+      <Show when={activeTab() === "location"}>
+        <LocationManagement />
       </Show>
     </div>
   );
