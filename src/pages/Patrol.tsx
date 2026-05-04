@@ -18,9 +18,18 @@ import Button from "../components/ui/Button";
 import CheckpointForm, { type Checkpoint } from "../components/CheckpointForm";
 import AssignmentForm, { type CreateAssignmentPayload } from "../components/AssignmentForm";
 import ConfirmModal from "../components/ConfirmModal";
-import type Employee from "./Employee";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+interface Employee {
+  id: string;
+  nik: string;
+  full_name: string;
+  email: string;
+  role: string;
+  department: string | null;
+  status: string | null;
+}
 
 interface Assignment {
   id: string;

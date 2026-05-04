@@ -12,7 +12,16 @@ import {
   MapPin,
   Scan,
   Fingerprint,
+  Upload,
+  Download,
+  CheckSquare,
+  Square,
+  Settings,
+  FileSpreadsheet,
+  FileDown,
+  FileUp,
 } from "lucide-solid";
+import * as XLSX from 'xlsx';
 
 interface AttendanceRequirement {
   wifi_enabled: boolean;
@@ -31,6 +40,13 @@ interface Employee {
   role: string;
   department: string | null;
   status: string | null;
+  phone?: string;
+  address?: string;
+  date_of_birth?: string;
+  hire_date?: string;
+  position?: string;
+  emergency_contact?: string;
+  emergency_phone?: string;
   attendance_requirement: AttendanceRequirement | null;
   created_at?: string;
   updated_at?: string;
@@ -53,7 +69,7 @@ interface LocationBoundary {
   is_active: boolean;
 }
 
-const Employee: Component = () => {
+const EmployeeManagement: Component = () => {
   const [searchTerm, setSearchTerm] = createSignal("");
   const [employees, setEmployees] = createSignal<Employee[]>([]);
   const [isLoading, setIsLoading] = createSignal(false);
@@ -64,6 +80,23 @@ const Employee: Component = () => {
   const [editingEmployee, setEditingEmployee] = createSignal<Employee | null>(null);
   const [filterDepartment, setFilterDepartment] = createSignal("all");
   const [filterStatus, setFilterStatus] = createSignal("all");
+
+  // Bulk operations
+  const [selectedEmployees, setSelectedEmployees] = createSignal<Set<string>>(new Set());
+  const [showBulkAttendanceModal, setShowBulkAttendanceModal] = createSignal(false);
+  const [bulkAttendanceData, setBulkAttendanceData] = createSignal({
+    wifi_enabled: false,
+    wifi_ssids: [] as string[],
+    location_enabled: false,
+    location_boundaries: [] as string[],
+    face_recognition_enabled: false,
+    fingerprint_enabled: false,
+  });
+
+  // Excel import/export
+  const [showImportModal, setShowImportModal] = createSignal(false);
+  const [importFile, setImportFile] = createSignal<File | null>(null);
+  const [importPreview, setImportPreview] = createSignal<any[]>([]);
 
   // WiFi and Location data
   const [wifiSettings, setWifiSettings] = createSignal<WiFiSetting[]>([]);
@@ -78,14 +111,13 @@ const Employee: Component = () => {
     role: "employee",
     department: "General",
     status: "Active",
-    attendance_requirement: {
-      wifi_enabled: false,
-      wifi_ssids: [] as string[],
-      location_enabled: false,
-      location_boundaries: [] as string[],
-      face_recognition_enabled: false,
-      fingerprint_enabled: false,
-    },
+    phone: "",
+    address: "",
+    date_of_birth: "",
+    hire_date: "",
+    position: "",
+    emergency_contact: "",
+    emergency_phone: "",
   });
 
   // Form state for edit
@@ -96,14 +128,13 @@ const Employee: Component = () => {
     role: "employee",
     department: "General",
     status: "Active",
-    attendance_requirement: {
-      wifi_enabled: false,
-      wifi_ssids: [] as string[],
-      location_enabled: false,
-      location_boundaries: [] as string[],
-      face_recognition_enabled: false,
-      fingerprint_enabled: false,
-    },
+    phone: "",
+    address: "",
+    date_of_birth: "",
+    hire_date: "",
+    position: "",
+    emergency_contact: "",
+    emergency_phone: "",
   });
 
   const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080/api";
@@ -112,13 +143,10 @@ const Employee: Component = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Add cache busting parameter if force refresh
-      const url = forceRefresh 
+      const url = forceRefresh
         ? `${BASE_URL}/employees?_t=${Date.now()}`
         : `${BASE_URL}/employees`;
-      
-      console.log("Fetching employees from:", url);
-      
+
       const response = await fetch(url, {
         method: "GET",
         headers: {
@@ -128,36 +156,24 @@ const Employee: Component = () => {
           "Expires": "0"
         }
       });
-      
-      console.log("Response status:", response.status);
-      console.log("Response ok:", response.ok);
-      
+
       if (!response.ok) {
         setError(`Server error: ${response.status} ${response.statusText}`);
         return;
       }
 
       const text = await response.text();
-      console.log("Response text:", text);
-      
       if (!text) {
         setError("Empty response from server");
         return;
       }
 
       const result = JSON.parse(text);
-      console.log("Parsed result:", result);
 
       if (result.status === "success") {
-        console.log("Raw data:", result.data);
-        
-        // Handle both array and single object responses
         const dataArray = Array.isArray(result.data) ? result.data : [result.data];
-        
+
         const mappedData = dataArray.map((item: any) => {
-          console.log("Mapping item:", item);
-          
-          // Extract ID from various possible formats
           let extractedId = "unknown";
           if (item.id) {
             if (typeof item.id === "string") {
@@ -170,7 +186,7 @@ const Employee: Component = () => {
               }
             }
           }
-          
+
           return {
             ...item,
             id: extractedId,
@@ -178,15 +194,12 @@ const Employee: Component = () => {
             status: item.status || "Active",
           };
         });
-        
-        console.log("Mapped data:", mappedData);
-        console.log("Total employees:", mappedData.length);
+
         setEmployees(mappedData);
       } else {
         setError(result.message || "Failed to fetch employees");
       }
     } catch (err: any) {
-      console.error("Error fetching employees:", err);
       setError(err.message || "Network error. Is the backend running?");
     } finally {
       setIsLoading(false);
@@ -261,10 +274,16 @@ const Employee: Component = () => {
       const result = text ? JSON.parse(text) : { status: "error", message: "Empty response" };
 
       if (response.ok && result.status === "success") {
-        setSuccess("Employee created successfully");
+        // Close modal and reset form first
         setShowAddModal(false);
         resetForm();
-        fetchEmployees();
+        setError(null);
+
+        // Fetch updated data with force refresh
+        await fetchEmployees(true);
+
+        // Show success message after modal is closed
+        setSuccess("Employee created successfully");
         setTimeout(() => setSuccess(null), 3000);
       } else {
         setError(result.message || "Failed to create employee");
@@ -298,10 +317,16 @@ const Employee: Component = () => {
       const result = text ? JSON.parse(text) : { status: "error", message: "Empty response" };
 
       if (response.ok && result.status === "success") {
-        setSuccess("Employee updated successfully");
+        // Close modal and reset state first
         setShowEditModal(false);
         setEditingEmployee(null);
-        fetchEmployees();
+        setError(null);
+
+        // Fetch updated data with force refresh
+        await fetchEmployees(true);
+
+        // Show success message after modal is closed
+        setSuccess("Employee updated successfully");
         setTimeout(() => setSuccess(null), 3000);
       } else {
         setError(result.message || "Failed to update employee");
@@ -329,8 +354,11 @@ const Employee: Component = () => {
       const result = text ? JSON.parse(text) : { status: "error", message: "Empty response" };
 
       if (response.ok && result.status === "success") {
+        // Fetch updated data with force refresh
+        await fetchEmployees(true);
+
+        // Show success message
         setSuccess("Employee deleted successfully");
-        fetchEmployees();
         setTimeout(() => setSuccess(null), 3000);
       } else {
         setError(result.message || "Failed to delete employee");
@@ -351,14 +379,13 @@ const Employee: Component = () => {
       role: employee.role,
       department: employee.department || "General",
       status: employee.status || "Active",
-      attendance_requirement: {
-        wifi_enabled: employee.attendance_requirement?.wifi_enabled || false,
-        wifi_ssids: employee.attendance_requirement?.wifi_ssids || [],
-        location_enabled: employee.attendance_requirement?.location_enabled || false,
-        location_boundaries: employee.attendance_requirement?.location_boundaries || [],
-        face_recognition_enabled: employee.attendance_requirement?.face_recognition_enabled || false,
-        fingerprint_enabled: employee.attendance_requirement?.fingerprint_enabled || false,
-      },
+      phone: employee.phone || "",
+      address: employee.address || "",
+      date_of_birth: employee.date_of_birth || "",
+      hire_date: employee.hire_date || "",
+      position: employee.position || "",
+      emergency_contact: employee.emergency_contact || "",
+      emergency_phone: employee.emergency_phone || "",
     });
     setShowEditModal(true);
   };
@@ -372,79 +399,14 @@ const Employee: Component = () => {
       role: "employee",
       department: "General",
       status: "Active",
-      attendance_requirement: {
-        wifi_enabled: false,
-        wifi_ssids: [],
-        location_enabled: false,
-        location_boundaries: [],
-        face_recognition_enabled: false,
-        fingerprint_enabled: false,
-      },
+      phone: "",
+      address: "",
+      date_of_birth: "",
+      hire_date: "",
+      position: "",
+      emergency_contact: "",
+      emergency_phone: "",
     });
-  };
-
-  const toggleWiFiSSID = (ssid: string, isCreate: boolean = true) => {
-    if (isCreate) {
-      setFormData((prev) => {
-        const current = prev.attendance_requirement.wifi_ssids || [];
-        const updated = current.includes(ssid)
-          ? current.filter((s) => s !== ssid)
-          : [...current, ssid];
-        return {
-          ...prev,
-          attendance_requirement: {
-            ...prev.attendance_requirement,
-            wifi_ssids: updated,
-          },
-        };
-      });
-    } else {
-      setEditFormData((prev) => {
-        const current = prev.attendance_requirement.wifi_ssids || [];
-        const updated = current.includes(ssid)
-          ? current.filter((s) => s !== ssid)
-          : [...current, ssid];
-        return {
-          ...prev,
-          attendance_requirement: {
-            ...prev.attendance_requirement,
-            wifi_ssids: updated,
-          },
-        };
-      });
-    }
-  };
-
-  const toggleLocationBoundary = (locationId: string, isCreate: boolean = true) => {
-    if (isCreate) {
-      setFormData((prev) => {
-        const current = prev.attendance_requirement.location_boundaries || [];
-        const updated = current.includes(locationId)
-          ? current.filter((l) => l !== locationId)
-          : [...current, locationId];
-        return {
-          ...prev,
-          attendance_requirement: {
-            ...prev.attendance_requirement,
-            location_boundaries: updated,
-          },
-        };
-      });
-    } else {
-      setEditFormData((prev) => {
-        const current = prev.attendance_requirement.location_boundaries || [];
-        const updated = current.includes(locationId)
-          ? current.filter((l) => l !== locationId)
-          : [...current, locationId];
-        return {
-          ...prev,
-          attendance_requirement: {
-            ...prev.attendance_requirement,
-            location_boundaries: updated,
-          },
-        };
-      });
-    }
   };
 
   const filteredEmployees = () =>
@@ -474,924 +436,1464 @@ const Employee: Component = () => {
     return badges;
   };
 
+  // Bulk selection functions
+  const toggleSelectEmployee = (nik: string) => {
+    const newSelected = new Set(selectedEmployees());
+    if (newSelected.has(nik)) {
+      newSelected.delete(nik);
+    } else {
+      newSelected.add(nik);
+    }
+    setSelectedEmployees(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedEmployees().size === filteredEmployees().length) {
+      setSelectedEmployees(new Set<string>());
+    } else {
+      const allNiks = filteredEmployees().map(emp => emp.nik);
+      setSelectedEmployees(new Set<string>(allNiks));
+    }
+  };
+
+  const bulkUpdateAttendanceRequirements = async () => {
+    if (selectedEmployees().size === 0) {
+      setError("Please select at least one employee");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const niks = Array.from(selectedEmployees());
+      const response = await fetch(`${BASE_URL}/employees/bulk-attendance`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employee_niks: niks,
+          attendance_requirement: bulkAttendanceData(),
+        }),
+      });
+
+      const text = await response.text();
+      const result = text ? JSON.parse(text) : { status: "error" };
+
+      if (response.ok && result.status === "success") {
+        // Close modal and clear selection first
+        setShowBulkAttendanceModal(false);
+        setSelectedEmployees(new Set<string>());
+        setError(null);
+
+        // Fetch updated data with force refresh
+        await fetchEmployees(true);
+
+        // Show success message after modal is closed
+        setSuccess(`Attendance requirements updated for ${niks.length} employees`);
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError(result.message || "Failed to update attendance requirements");
+      }
+    } catch (err: any) {
+      setError(err.message || "Network error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Excel functions
+  const downloadTemplate = () => {
+    const template = [
+      {
+        NIK: "EMP001",
+        "Full Name": "John Doe",
+        Email: "john@example.com",
+        Password: "password123",
+        Role: "employee",
+        Department: "Engineering",
+        Status: "Active",
+        Phone: "+1234567890",
+        Address: "123 Main St, City",
+        "Date of Birth": "1990-01-15",
+        "Hire Date": "2020-01-01",
+        Position: "Software Engineer",
+        "Emergency Contact": "Jane Doe",
+        "Emergency Phone": "+0987654321",
+      },
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(template);
+
+    // Add column widths for better readability
+    const wscols = [
+      { wch: 15 }, // NIK
+      { wch: 25 }, // Full Name
+      { wch: 30 }, // Email
+      { wch: 15 }, // Password
+      { wch: 15 }, // Role
+      { wch: 20 }, // Department
+      { wch: 15 }, // Status
+      { wch: 20 }, // Phone
+      { wch: 40 }, // Address
+      { wch: 15 }, // Date of Birth
+      { wch: 15 }, // Hire Date
+      { wch: 25 }, // Position
+      { wch: 25 }, // Emergency Contact
+      { wch: 20 }  // Emergency Phone
+    ];
+    ws['!cols'] = wscols;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Employees Template");
+    XLSX.writeFile(wb, "employee_template.xlsx");
+  };
+
+  const exportEmployees = () => {
+    const data = employees().map(emp => ({
+      NIK: emp.nik,
+      "Full Name": emp.full_name,
+      Email: emp.email,
+      Role: emp.role,
+      Department: emp.department || "",
+      Status: emp.status || "",
+      Phone: emp.phone || "",
+      Address: emp.address || "",
+      "Date of Birth": emp.date_of_birth || "",
+      "Hire Date": emp.hire_date || "",
+      Position: emp.position || "",
+      "Emergency Contact": emp.emergency_contact || "",
+      "Emergency Phone": emp.emergency_phone || "",
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+
+    // Add column widths for better readability
+    const wscols = [
+      { wch: 15 }, // NIK
+      { wch: 25 }, // Full Name
+      { wch: 30 }, // Email
+      { wch: 15 }, // Role
+      { wch: 20 }, // Department
+      { wch: 15 }, // Status
+      { wch: 20 }, // Phone
+      { wch: 40 }, // Address
+      { wch: 15 }, // Date of Birth
+      { wch: 15 }, // Hire Date
+      { wch: 25 }, // Position
+      { wch: 25 }, // Emergency Contact
+      { wch: 20 }  // Emergency Phone
+    ];
+    ws['!cols'] = wscols;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Employees List");
+    XLSX.writeFile(wb, `employees_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const handleFileUpload = (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file) return;
+
+    setImportFile(file);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+        setImportPreview(data);
+      } catch (err) {
+        setError("Failed to read Excel file");
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const importEmployees = async () => {
+    const preview = importPreview();
+    if (preview.length === 0) {
+      setError("No data to import");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const employees = preview.map((row: any) => ({
+        nik: String(row.NIK || row.nik || ""),
+        full_name: String(row["Full Name"] || row.full_name || ""),
+        email: String(row.Email || row.email || ""),
+        password: String(row.Password || row.password || "default123"),
+        role: String(row.Role || row.role || "employee"),
+        department: String(row.Department || row.department || "General"),
+        status: String(row.Status || row.status || "Active"),
+        phone: String(row.Phone || row.phone || ""),
+        address: String(row.Address || row.address || ""),
+        date_of_birth: String(row["Date of Birth"] || row.date_of_birth || ""),
+        hire_date: String(row["Hire Date"] || row.hire_date || ""),
+        position: String(row.Position || row.position || ""),
+        emergency_contact: String(row["Emergency Contact"] || row.emergency_contact || ""),
+        emergency_phone: String(row["Emergency Phone"] || row.emergency_phone || ""),
+      }));
+
+      const response = await fetch(`${BASE_URL}/employees/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employees }),
+      });
+
+      const text = await response.text();
+      const result = text ? JSON.parse(text) : { status: "error" };
+
+      if (response.ok && result.status === "success") {
+        // Close modal and reset state first
+        setShowImportModal(false);
+        setImportFile(null);
+        setImportPreview([]);
+        setError(null);
+
+        // Fetch updated data with force refresh
+        await fetchEmployees(true);
+
+        // Show success message after modal is closed
+        setSuccess(`Successfully imported ${employees.length} employees`);
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError(result.message || "Failed to import employees");
+      }
+    } catch (err: any) {
+      setError(err.message || "Network error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div class="space-y-6">
       {/* Action Buttons */}
-      <div class="flex justify-end gap-2">
-        <button
-          onClick={() => fetchEmployees(true)}
-          class="flex items-center gap-2 bg-white text-[var(--color-primary-button)] border border-[var(--color-border)] px-4 py-2 rounded-xl hover:bg-[var(--color-secondary-bg)] transition-all shadow-sm font-medium"
-          title="Force refresh (bypass cache)"
-        >
-          <RefreshCw class={`w-4 h-4 ${isLoading() ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
-        <button
-          onClick={() => setShowAddModal(true)}
-          class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-all shadow-sm font-medium"
-        >
-          <Plus class="w-5 h-5" />
-          Add Employee
-        </button>
-      </div>
+      <div class="flex flex-wrap justify-between items-center gap-2">
+        <div class="flex gap-2">
+          <Show when={selectedEmployees().size > 0}>
+            <button
+              onClick={() => setShowBulkAttendanceModal(true)}
+              class="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-xl hover:bg-purple-700 transition-all shadow-sm font-medium"
+            >
+              <Settings class="w-4 h-4" />
+              Set Attendance ({selectedEmployees().size})
+            </button>
+            <button
+              onClick={() => setSelectedEmployees(new Set())}
+              class="flex items-center gap-2 bg-gray-600 text-white px-4 py-2 rounded-xl hover:bg-gray-700 transition-all shadow-sm font-medium"
+            >
+              <X class="w-4 h-4" />
+              Clear Selection
+            </button>
+          </Show>
+        </div>
 
-      {/* Filters & Search */}
-      <div class="bg-white p-4 rounded-2xl shadow-sm border border-[var(--color-border)] flex flex-col sm:flex-row gap-4 justify-between items-center">
-        <div class="relative w-full sm:w-96">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search class="h-5 w-5 text-[var(--color-text-tertiary)]" />
+        <div class="flex gap-2">
+          <div class="flex items-center bg-[var(--color-light-gray)]/30 p-1 rounded-xl border border-[var(--color-border)]">
+            <button
+              onClick={downloadTemplate}
+              class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[var(--color-text-secondary)] hover:text-green-600 hover:bg-white hover:shadow-sm rounded-lg transition-all"
+              title="Download Excel template"
+            >
+              <FileSpreadsheet class="w-4 h-4" />
+              Template
+            </button>
+            <div class="w-px h-4 bg-[var(--color-border)] mx-1"></div>
+            <button
+              onClick={() => setShowImportModal(true)}
+              class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[var(--color-text-secondary)] hover:text-blue-600 hover:bg-white hover:shadow-sm rounded-lg transition-all"
+              title="Import from Excel"
+            >
+              <FileUp class="w-4 h-4" />
+              Import
+            </button>
+            <div class="w-px h-4 bg-[var(--color-border)] mx-1"></div>
+            <button
+              onClick={exportEmployees}
+              class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[var(--color-text-secondary)] hover:text-indigo-600 hover:bg-white hover:shadow-sm rounded-lg transition-all"
+              title="Export to Excel"
+            >
+              <FileDown class="w-4 h-4" />
+              Export
+            </button>
           </div>
-          <input
-            type="text"
-            class="block w-full pl-10 pr-3 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-[var(--color-light-gray)]/50 text-sm transition-all"
-            placeholder="Search employees by name, NIK, or department..."
-            value={searchTerm()}
-            onInput={(e) => setSearchTerm(e.currentTarget.value)}
-          />
-        </div>
-        <div class="flex gap-2 w-full sm:w-auto">
-          <select
-            class="block w-full sm:w-auto pl-4 pr-10 py-2.5 text-sm border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-[var(--color-text-primary)] font-medium"
-            value={filterDepartment()}
-            onChange={(e) => setFilterDepartment(e.currentTarget.value)}
+          <button
+            onClick={() => fetchEmployees(true)}
+            class="flex items-center gap-2 bg-white text-[var(--color-primary-button)] border border-[var(--color-border)] px-4 py-2 rounded-xl hover:bg-[var(--color-secondary-bg)] transition-all shadow-sm font-medium"
+            title="Force refresh (bypass cache)"
           >
-            <option value="all">All Departments</option>
-            <option value="Engineering">Engineering</option>
-            <option value="Marketing">Marketing</option>
-            <option value="Human Resources">Human Resources</option>
-            <option value="Finance">Finance</option>
-            <option value="General">General</option>
-          </select>
-          <select
-            class="block w-full sm:w-auto pl-4 pr-10 py-2.5 text-sm border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-[var(--color-text-primary)] font-medium"
-            value={filterStatus()}
-            onChange={(e) => setFilterStatus(e.currentTarget.value)}
+            <RefreshCw class={`w-4 h-4 ${isLoading() ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-all shadow-sm font-medium"
           >
-            <option value="all">All Status</option>
-            <option value="Active">Active</option>
-            <option value="On Leave">On Leave</option>
-            <option value="Inactive">Inactive</option>
-          </select>
+            <Plus class="w-5 h-5" />
+            Add Employee
+          </button>
         </div>
       </div>
 
-      {/* Success Message */}
-      {success() && (
-        <div class="bg-green-50 text-green-600 p-4 rounded-xl text-sm border border-green-200 flex items-center gap-2">
-          <CheckCircle class="w-5 h-5" />
-          {success()}
-        </div>
-      )}
+      {/* Filters & Search */ }
+  <div class="bg-white p-4 rounded-2xl shadow-sm border border-[var(--color-border)] flex flex-col sm:flex-row gap-4 justify-between items-center">
+    <div class="relative w-full sm:w-96">
+      <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        <Search class="h-5 w-5 text-[var(--color-text-tertiary)]" />
+      </div>
+      <input
+        type="text"
+        class="block w-full pl-10 pr-3 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-[var(--color-light-gray)]/50 text-sm transition-all"
+        placeholder="Search employees by name, NIK, or department..."
+        value={searchTerm()}
+        onInput={(e) => setSearchTerm(e.currentTarget.value)}
+      />
+    </div>
+    <div class="flex gap-2 w-full sm:w-auto">
+      <select
+        class="block w-full sm:w-auto pl-4 pr-10 py-2.5 text-sm border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-[var(--color-text-primary)] font-medium"
+        value={filterDepartment()}
+        onChange={(e) => setFilterDepartment(e.currentTarget.value)}
+      >
+        <option value="all">All Departments</option>
+        <option value="Engineering">Engineering</option>
+        <option value="Marketing">Marketing</option>
+        <option value="Human Resources">Human Resources</option>
+        <option value="Finance">Finance</option>
+        <option value="Security Department">Security Department</option>
+        <option value="General">General</option>
+      </select>
+      <select
+        class="block w-full sm:w-auto pl-4 pr-10 py-2.5 text-sm border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-[var(--color-text-primary)] font-medium"
+        value={filterStatus()}
+        onChange={(e) => setFilterStatus(e.currentTarget.value)}
+      >
+        <option value="all">All Status</option>
+        <option value="Active">Active</option>
+        <option value="On Leave">On Leave</option>
+        <option value="Inactive">Inactive</option>
+      </select>
+    </div>
+  </div>
 
-      {/* Error Message */}
-      {error() && (
-        <div class="bg-red-50 text-red-600 p-4 rounded-xl text-sm border border-red-200 flex items-center gap-2">
-          <XCircle class="w-5 h-5" />
-          {error()}
-        </div>
-      )}
+  {/* Success Message */ }
+  {
+    success() && (
+      <div class="bg-green-50 text-green-600 p-4 rounded-xl text-sm border border-green-200 flex items-center gap-2">
+        <CheckCircle class="w-5 h-5" />
+        {success()}
+      </div>
+    )
+  }
 
-      {/* Employee Table */}
-      <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-[var(--color-border)]">
-            <thead class="bg-[var(--color-light-gray)]/50">
-              <tr>
-                <th
-                  scope="col"
-                  class="px-6 py-4 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
-                >
-                  Employee Info
-                </th>
-                <th
-                  scope="col"
-                  class="px-6 py-4 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
-                >
-                  Employee ID (NIK)
-                </th>
-                <th
-                  scope="col"
-                  class="px-6 py-4 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
-                >
-                  Department & Role
-                </th>
-                <th
-                  scope="col"
-                  class="px-6 py-4 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
-                >
-                  Attendance Requirements
-                </th>
-                <th
-                  scope="col"
-                  class="px-6 py-4 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
-                >
-                  Status
-                </th>
-                <th
-                  scope="col"
-                  class="px-6 py-4 text-right text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
-                >
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-[var(--color-border)]">
-              {isLoading() && employees().length === 0 ? (
-                <tr>
-                  <td
-                    colspan="6"
-                    class="px-6 py-12 text-center text-[var(--color-text-secondary)] text-sm"
-                  >
-                    <div class="flex items-center justify-center gap-2">
-                      <RefreshCw class="w-5 h-5 animate-spin text-[var(--color-primary-button)]" />
-                      Loading employees...
+  {/* Error Message */ }
+  {
+    error() && (
+      <div class="bg-red-50 text-red-600 p-4 rounded-xl text-sm border border-red-200 flex items-center gap-2">
+        <XCircle class="w-5 h-5" />
+        {error()}
+      </div>
+    )
+  }
+
+  {/* Employee Table */ }
+  <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-[var(--color-border)]">
+        <thead class="bg-[var(--color-light-gray)]/50">
+          <tr>
+            <th scope="col" class="px-4 py-4 text-left">
+              <button
+                onClick={toggleSelectAll}
+                class="flex items-center justify-center w-5 h-5 border-2 border-[var(--color-border)] rounded hover:bg-[var(--color-secondary-bg)] transition-colors"
+              >
+                {selectedEmployees().size === filteredEmployees().length && filteredEmployees().length > 0 ? (
+                  <CheckSquare class="w-4 h-4 text-[var(--color-primary-button)]" />
+                ) : (
+                  <Square class="w-4 h-4 text-gray-400" />
+                )}
+              </button>
+            </th>
+            <th
+              scope="col"
+              class="px-6 py-4 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+            >
+              Employee Info
+            </th>
+            <th
+              scope="col"
+              class="px-6 py-4 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+            >
+              Employee ID (NIK)
+            </th>
+            <th
+              scope="col"
+              class="px-6 py-4 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+            >
+              Department & Role
+            </th>
+            <th
+              scope="col"
+              class="px-6 py-4 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+            >
+              Attendance Requirements
+            </th>
+            <th
+              scope="col"
+              class="px-6 py-4 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+            >
+              Status
+            </th>
+            <th
+              scope="col"
+              class="px-6 py-4 text-right text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+            >
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-[var(--color-border)]">
+          {isLoading() && employees().length === 0 ? (
+            <tr>
+              <td
+                colspan="7"
+                class="px-6 py-12 text-center text-[var(--color-text-secondary)] text-sm"
+              >
+                <div class="flex items-center justify-center gap-2">
+                  <RefreshCw class="w-5 h-5 animate-spin text-[var(--color-primary-button)]" />
+                  Loading employees...
+                </div>
+              </td>
+            </tr>
+          ) : (
+            <For each={filteredEmployees()}>
+              {(employee) => (
+                <tr class="hover:bg-[var(--color-light-gray)]/30 transition-colors">
+                  <td class="px-4 py-4">
+                    <button
+                      onClick={() => toggleSelectEmployee(employee.nik)}
+                      class="flex items-center justify-center w-5 h-5 border-2 border-[var(--color-border)] rounded hover:bg-[var(--color-secondary-bg)] transition-colors"
+                    >
+                      {selectedEmployees().has(employee.nik) ? (
+                        <CheckSquare class="w-4 h-4 text-[var(--color-primary-button)]" />
+                      ) : (
+                        <Square class="w-4 h-4 text-gray-400" />
+                      )}
+                    </button>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="flex items-center">
+                      <div class="flex-shrink-0 h-10 w-10">
+                        <div class="h-10 w-10 rounded-full bg-[var(--color-secondary-bg)] flex items-center justify-center text-[var(--color-primary-button)] font-bold text-sm shadow-inner">
+                          {employee.full_name.charAt(0).toUpperCase()}
+                        </div>
+                      </div>
+                      <div class="ml-4">
+                        <div class="text-sm font-semibold text-[var(--color-text-primary)]">
+                          {employee.full_name}
+                        </div>
+                        <div class="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                          {employee.email}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-[var(--color-text-primary)] font-semibold">
+                      {employee.nik}
+                    </div>
+                    <div class="text-[10px] text-[var(--color-text-tertiary)] uppercase tracking-wide mt-0.5">
+                      ID: {employee.id.substring(0, 8)}...
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-[var(--color-text-primary)] font-medium">
+                      {employee.department}
+                    </div>
+                    <div class="text-xs text-[var(--color-text-secondary)] mt-0.5 capitalize">
+                      {employee.role}
+                    </div>
+                  </td>
+                  <td class="px-6 py-4">
+                    <div class="flex flex-wrap gap-1">
+                      <For each={getAttendanceRequirementBadges(employee.attendance_requirement)}>
+                        {(badge) => (
+                          <span
+                            class={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${badge.color === "blue"
+                                ? "bg-blue-100 text-blue-700 border border-blue-200"
+                                : badge.color === "green"
+                                  ? "bg-green-100 text-green-700 border border-green-200"
+                                  : badge.color === "purple"
+                                    ? "bg-purple-100 text-purple-700 border border-purple-200"
+                                    : "bg-orange-100 text-orange-700 border border-orange-200"
+                              }`}
+                          >
+                            <badge.icon class="w-3 h-3" />
+                            {badge.label}
+                          </span>
+                        )}
+                      </For>
+                      {getAttendanceRequirementBadges(employee.attendance_requirement).length === 0 && (
+                        <span class="text-xs text-[var(--color-text-tertiary)]">No requirements</span>
+                      )}
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <span
+                      class={`px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full shadow-sm ${employee.status === "Active"
+                          ? "bg-green-100 text-green-800 border border-green-200"
+                          : employee.status === "On Leave"
+                            ? "bg-yellow-100 text-yellow-800 border border-yellow-200"
+                            : "bg-red-100 text-red-800 border border-red-200"
+                        }`}
+                    >
+                      {employee.status}
+                    </span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <div class="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => startEditing(employee)}
+                        class="text-[var(--color-primary-button)] hover:bg-[var(--color-secondary-bg)] bg-[var(--color-light-gray)] border border-[var(--color-border)] p-2 rounded-lg transition-colors shadow-sm active:scale-95"
+                      >
+                        <Edit2 class="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => deleteEmployee(employee.nik, employee.full_name)}
+                        class="text-red-600 hover:bg-red-100 bg-red-50 border border-red-200 p-2 rounded-lg transition-colors shadow-sm active:scale-95"
+                      >
+                        <Trash2 class="w-4 h-4" />
+                      </button>
                     </div>
                   </td>
                 </tr>
-              ) : (
-                <For each={filteredEmployees()}>
-                  {(employee) => (
-                    <tr class="hover:bg-[var(--color-light-gray)]/30 transition-colors">
-                      <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="flex items-center">
-                          <div class="flex-shrink-0 h-10 w-10">
-                            <div class="h-10 w-10 rounded-full bg-[var(--color-secondary-bg)] flex items-center justify-center text-[var(--color-primary-button)] font-bold text-sm shadow-inner">
-                              {employee.full_name.charAt(0).toUpperCase()}
-                            </div>
-                          </div>
-                          <div class="ml-4">
-                            <div class="text-sm font-semibold text-[var(--color-text-primary)]">
-                              {employee.full_name}
-                            </div>
-                            <div class="text-xs text-[var(--color-text-secondary)] mt-0.5">
-                              {employee.email}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm text-[var(--color-text-primary)] font-semibold">
-                          {employee.nik}
-                        </div>
-                        <div class="text-[10px] text-[var(--color-text-tertiary)] uppercase tracking-wide mt-0.5">
-                          ID: {employee.id.substring(0, 8)}...
-                        </div>
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm text-[var(--color-text-primary)] font-medium">
-                          {employee.department}
-                        </div>
-                        <div class="text-xs text-[var(--color-text-secondary)] mt-0.5 capitalize">
-                          {employee.role}
-                        </div>
-                      </td>
-                      <td class="px-6 py-4">
-                        <div class="flex flex-wrap gap-1">
-                          <For each={getAttendanceRequirementBadges(employee.attendance_requirement)}>
-                            {(badge) => (
-                              <span
-                                class={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${
-                                  badge.color === "blue"
-                                    ? "bg-blue-100 text-blue-700 border border-blue-200"
-                                    : badge.color === "green"
-                                      ? "bg-green-100 text-green-700 border border-green-200"
-                                      : badge.color === "purple"
-                                        ? "bg-purple-100 text-purple-700 border border-purple-200"
-                                        : "bg-orange-100 text-orange-700 border border-orange-200"
-                                }`}
-                              >
-                                <badge.icon class="w-3 h-3" />
-                                {badge.label}
-                              </span>
-                            )}
-                          </For>
-                          {getAttendanceRequirementBadges(employee.attendance_requirement).length === 0 && (
-                            <span class="text-xs text-[var(--color-text-tertiary)]">No requirements</span>
-                          )}
-                        </div>
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap">
-                        <span
-                          class={`px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full shadow-sm ${
-                            employee.status === "Active"
-                              ? "bg-green-100 text-green-800 border border-green-200"
-                              : employee.status === "On Leave"
-                                ? "bg-yellow-100 text-yellow-800 border border-yellow-200"
-                                : "bg-red-100 text-red-800 border border-red-200"
-                          }`}
-                        >
-                          {employee.status}
-                        </span>
-                      </td>
-                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div class="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => startEditing(employee)}
-                            class="text-[var(--color-primary-button)] hover:bg-[var(--color-secondary-bg)] bg-[var(--color-light-gray)] border border-[var(--color-border)] p-2 rounded-lg transition-colors shadow-sm active:scale-95"
-                          >
-                            <Edit2 class="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => deleteEmployee(employee.nik, employee.full_name)}
-                            class="text-red-600 hover:bg-red-100 bg-red-50 border border-red-200 p-2 rounded-lg transition-colors shadow-sm active:scale-95"
-                          >
-                            <Trash2 class="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </For>
               )}
-              {!isLoading() && filteredEmployees().length === 0 && (
-                <tr>
-                  <td
-                    colspan="6"
-                    class="px-6 py-12 text-center text-[var(--color-text-secondary)] text-sm"
-                  >
-                    No employees found matching your criteria.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+            </For>
+          )}
+          {!isLoading() && filteredEmployees().length === 0 && (
+            <tr>
+              <td
+                colspan="7"
+                class="px-6 py-12 text-center text-[var(--color-text-secondary)] text-sm"
+              >
+                No employees found matching your criteria.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+
+    {/* Pagination */}
+    <div class="bg-white px-4 py-3 border-t border-[var(--color-border)] flex items-center justify-between sm:px-6">
+      <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+        <div>
+          <p class="text-sm text-[var(--color-text-secondary)]">
+            Showing{" "}
+            <span class="font-medium text-[var(--color-text-primary)]">
+              1
+            </span>{" "}
+            to{" "}
+            <span class="font-medium text-[var(--color-text-primary)]">
+              {filteredEmployees().length}
+            </span>{" "}
+            of{" "}
+            <span class="font-medium text-[var(--color-text-primary)]">
+              {employees().length}
+            </span>{" "}
+            results
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {/* Add Employee Modal */ }
+  <Show when={showAddModal()}>
+    <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full my-8">
+        <div class="border-b border-[var(--color-border)] p-6 flex justify-between items-center">
+          <h3 class="text-xl font-bold text-[var(--color-text-primary)]">
+            Add New Employee
+          </h3>
+          <button
+            onClick={() => {
+              setShowAddModal(false);
+              resetForm();
+              setError(null);
+            }}
+            class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-2"
+          >
+            <X class="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Pagination */}
-        <div class="bg-white px-4 py-3 border-t border-[var(--color-border)] flex items-center justify-between sm:px-6">
-          <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+        <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+          <div class="grid grid-cols-2 gap-4">
             <div>
-              <p class="text-sm text-[var(--color-text-secondary)]">
-                Showing{" "}
-                <span class="font-medium text-[var(--color-text-primary)]">
-                  1
-                </span>{" "}
-                to{" "}
-                <span class="font-medium text-[var(--color-text-primary)]">
-                  {filteredEmployees().length}
-                </span>{" "}
-                of{" "}
-                <span class="font-medium text-[var(--color-text-primary)]">
-                  {employees().length}
-                </span>{" "}
-                results
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                NIK (Employee ID) *
+              </label>
+              <input
+                type="text"
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                placeholder="e.g., EMP001"
+                value={formData().nik}
+                onInput={(e) =>
+                  setFormData((prev) => ({ ...prev, nik: e.currentTarget.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Full Name *
+              </label>
+              <input
+                type="text"
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                placeholder="e.g., John Doe"
+                value={formData().full_name}
+                onInput={(e) =>
+                  setFormData((prev) => ({ ...prev, full_name: e.currentTarget.value }))
+                }
+              />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Email *
+              </label>
+              <input
+                type="email"
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                placeholder="e.g., john@example.com"
+                value={formData().email}
+                onInput={(e) =>
+                  setFormData((prev) => ({ ...prev, email: e.currentTarget.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Password *
+              </label>
+              <input
+                type="password"
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                placeholder="Password for mobile app"
+                value={formData().password}
+                onInput={(e) =>
+                  setFormData((prev) => ({ ...prev, password: e.currentTarget.value }))
+                }
+              />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-4">
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Role
+              </label>
+              <select
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                value={formData().role}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, role: e.currentTarget.value }))
+                }
+              >
+                <option value="employee">Employee</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Department
+              </label>
+              <select
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                value={formData().department}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, department: e.currentTarget.value }))
+                }
+              >
+                <option value="General">General</option>
+                <option value="Engineering">Engineering</option>
+                <option value="Marketing">Marketing</option>
+                <option value="Human Resources">Human Resources</option>
+                <option value="Finance">Finance</option>
+                <option value="Security Department">Security Department</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Status
+              </label>
+              <select
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                value={formData().status}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, status: e.currentTarget.value }))
+                }
+              >
+                <option value="Active">Active</option>
+                <option value="On Leave">On Leave</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Enriched Fields Section */}
+          <div class="border-t border-[var(--color-border)] pt-4 mt-4">
+            <h4 class="text-sm font-bold text-[var(--color-text-primary)] mb-4">Additional Information</h4>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Phone
+                </label>
+                <input
+                  type="tel"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  placeholder="e.g., +1234567890"
+                  value={formData().phone}
+                  onInput={(e) =>
+                    setFormData((prev) => ({ ...prev, phone: e.currentTarget.value }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Position
+                </label>
+                <input
+                  type="text"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  placeholder="e.g., Software Engineer"
+                  value={formData().position}
+                  onInput={(e) =>
+                    setFormData((prev) => ({ ...prev, position: e.currentTarget.value }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Address
+              </label>
+              <textarea
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white resize-none"
+                placeholder="Full address"
+                rows="2"
+                value={formData().address}
+                onInput={(e) =>
+                  setFormData((prev) => ({ ...prev, address: e.currentTarget.value }))
+                }
+              />
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Date of Birth
+                </label>
+                <input
+                  type="date"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  value={formData().date_of_birth}
+                  onInput={(e) =>
+                    setFormData((prev) => ({ ...prev, date_of_birth: e.currentTarget.value }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Hire Date
+                </label>
+                <input
+                  type="date"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  value={formData().hire_date}
+                  onInput={(e) =>
+                    setFormData((prev) => ({ ...prev, hire_date: e.currentTarget.value }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Emergency Contact Name
+                </label>
+                <input
+                  type="text"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  placeholder="e.g., Jane Doe"
+                  value={formData().emergency_contact}
+                  onInput={(e) =>
+                    setFormData((prev) => ({ ...prev, emergency_contact: e.currentTarget.value }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Emergency Contact Phone
+                </label>
+                <input
+                  type="tel"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  placeholder="e.g., +0987654321"
+                  value={formData().emergency_phone}
+                  onInput={(e) =>
+                    setFormData((prev) => ({ ...prev, emergency_phone: e.currentTarget.value }))
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-t border-[var(--color-border)] p-6 flex gap-3">
+          <button
+            onClick={() => {
+              setShowAddModal(false);
+              resetForm();
+              setError(null);
+            }}
+            class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl hover:bg-[var(--color-light-gray)] transition-colors font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={createEmployee}
+            disabled={isLoading()}
+            class="flex-1 px-4 py-2.5 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-colors font-medium disabled:opacity-50"
+          >
+            {isLoading() ? "Creating..." : "Create Employee"}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Show>
+
+  {/* Edit Employee Modal */ }
+  <Show when={showEditModal()}>
+    <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full my-8">
+        <div class="border-b border-[var(--color-border)] p-6 flex justify-between items-center">
+          <h3 class="text-xl font-bold text-[var(--color-text-primary)]">
+            Edit Employee: {editingEmployee()?.full_name}
+          </h3>
+          <button
+            onClick={() => {
+              setShowEditModal(false);
+              setEditingEmployee(null);
+              setError(null);
+            }}
+            class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-2"
+          >
+            <X class="w-5 h-5" />
+          </button>
+        </div>
+
+        <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                NIK (Employee ID)
+              </label>
+              <input
+                type="text"
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl bg-gray-100 text-gray-500"
+                value={editingEmployee()?.nik}
+                disabled
+              />
+              <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
+                NIK cannot be changed
+              </p>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Full Name *
+              </label>
+              <input
+                type="text"
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                placeholder="e.g., John Doe"
+                value={editFormData().full_name}
+                onInput={(e) =>
+                  setEditFormData((prev) => ({ ...prev, full_name: e.currentTarget.value }))
+                }
+              />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Email *
+              </label>
+              <input
+                type="email"
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                placeholder="e.g., john@example.com"
+                value={editFormData().email}
+                onInput={(e) =>
+                  setEditFormData((prev) => ({ ...prev, email: e.currentTarget.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                New Password
+              </label>
+              <input
+                type="password"
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                placeholder="Leave empty to keep current"
+                value={editFormData().password}
+                onInput={(e) =>
+                  setEditFormData((prev) => ({ ...prev, password: e.currentTarget.value }))
+                }
+              />
+              <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
+                Leave empty to keep current password
               </p>
             </div>
           </div>
+
+          <div class="grid grid-cols-3 gap-4">
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Role
+              </label>
+              <select
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                value={editFormData().role}
+                onChange={(e) =>
+                  setEditFormData((prev) => ({ ...prev, role: e.currentTarget.value }))
+                }
+              >
+                <option value="employee">Employee</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Department
+              </label>
+              <select
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                value={editFormData().department}
+                onChange={(e) =>
+                  setEditFormData((prev) => ({ ...prev, department: e.currentTarget.value }))
+                }
+              >
+                <option value="General">General</option>
+                <option value="Engineering">Engineering</option>
+                <option value="Marketing">Marketing</option>
+                <option value="Human Resources">Human Resources</option>
+                <option value="Finance">Finance</option>
+                <option value="Security Department">Security Department</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Status
+              </label>
+              <select
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                value={editFormData().status}
+                onChange={(e) =>
+                  setEditFormData((prev) => ({ ...prev, status: e.currentTarget.value }))
+                }
+              >
+                <option value="Active">Active</option>
+                <option value="On Leave">On Leave</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Enriched Fields Section */}
+          <div class="border-t border-[var(--color-border)] pt-4 mt-4">
+            <h4 class="text-sm font-bold text-[var(--color-text-primary)] mb-4">Additional Information</h4>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Phone
+                </label>
+                <input
+                  type="tel"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  placeholder="e.g., +1234567890"
+                  value={editFormData().phone}
+                  onInput={(e) =>
+                    setEditFormData((prev) => ({ ...prev, phone: e.currentTarget.value }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Position
+                </label>
+                <input
+                  type="text"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  placeholder="e.g., Software Engineer"
+                  value={editFormData().position}
+                  onInput={(e) =>
+                    setEditFormData((prev) => ({ ...prev, position: e.currentTarget.value }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                Address
+              </label>
+              <textarea
+                class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white resize-none"
+                placeholder="Full address"
+                rows="2"
+                value={editFormData().address}
+                onInput={(e) =>
+                  setEditFormData((prev) => ({ ...prev, address: e.currentTarget.value }))
+                }
+              />
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Date of Birth
+                </label>
+                <input
+                  type="date"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  value={editFormData().date_of_birth}
+                  onInput={(e) =>
+                    setEditFormData((prev) => ({ ...prev, date_of_birth: e.currentTarget.value }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Hire Date
+                </label>
+                <input
+                  type="date"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  value={editFormData().hire_date}
+                  onInput={(e) =>
+                    setEditFormData((prev) => ({ ...prev, hire_date: e.currentTarget.value }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Emergency Contact Name
+                </label>
+                <input
+                  type="text"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  placeholder="e.g., Jane Doe"
+                  value={editFormData().emergency_contact}
+                  onInput={(e) =>
+                    setEditFormData((prev) => ({ ...prev, emergency_contact: e.currentTarget.value }))
+                  }
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+                  Emergency Contact Phone
+                </label>
+                <input
+                  type="tel"
+                  class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
+                  placeholder="e.g., +0987654321"
+                  value={editFormData().emergency_phone}
+                  onInput={(e) =>
+                    setEditFormData((prev) => ({ ...prev, emergency_phone: e.currentTarget.value }))
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-t border-[var(--color-border)] p-6 flex gap-3">
+          <button
+            onClick={() => {
+              setShowEditModal(false);
+              setEditingEmployee(null);
+              setError(null);
+            }}
+            class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl hover:bg-[var(--color-light-gray)] transition-colors font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={updateEmployee}
+            disabled={isLoading()}
+            class="flex-1 px-4 py-2.5 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-colors font-medium disabled:opacity-50"
+          >
+            {isLoading() ? "Updating..." : "Update Employee"}
+          </button>
         </div>
       </div>
-
-      {/* Add Employee Modal */}
-      <Show when={showAddModal()}>
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full my-8">
-            <div class="border-b border-[var(--color-border)] p-6 flex justify-between items-center">
-              <h3 class="text-xl font-bold text-[var(--color-text-primary)]">
-                Add New Employee
-              </h3>
-              <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  resetForm();
-                  setError(null);
-                }}
-                class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-2"
-              >
-                <X class="w-5 h-5" />
-              </button>
-            </div>
-
-            <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div class="space-y-4">
-                <h4 class="font-semibold text-[var(--color-text-primary)]">Basic Information</h4>
-                
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      NIK (Employee ID) *
-                    </label>
-                    <input
-                      type="text"
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      placeholder="e.g., EMP001"
-                      value={formData().nik}
-                      onInput={(e) =>
-                        setFormData((prev) => ({ ...prev, nik: e.currentTarget.value }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      placeholder="e.g., John Doe"
-                      value={formData().full_name}
-                      onInput={(e) =>
-                        setFormData((prev) => ({ ...prev, full_name: e.currentTarget.value }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      Email *
-                    </label>
-                    <input
-                      type="email"
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      placeholder="e.g., john@example.com"
-                      value={formData().email}
-                      onInput={(e) =>
-                        setFormData((prev) => ({ ...prev, email: e.currentTarget.value }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      Password *
-                    </label>
-                    <input
-                      type="password"
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      placeholder="Password for mobile app"
-                      value={formData().password}
-                      onInput={(e) =>
-                        setFormData((prev) => ({ ...prev, password: e.currentTarget.value }))
-                      }
-                    />
-                    <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
-                      This password will be used to login to the mobile app
-                    </p>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-3 gap-4">
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      Role
-                    </label>
-                    <select
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      value={formData().role}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, role: e.currentTarget.value }))
-                      }
-                    >
-                      <option value="employee">Employee</option>
-                      <option value="manager">Manager</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      Department
-                    </label>
-                    <select
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      value={formData().department}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, department: e.currentTarget.value }))
-                      }
-                    >
-                      <option value="General">General</option>
-                      <option value="Engineering">Engineering</option>
-                      <option value="Marketing">Marketing</option>
-                      <option value="Human Resources">Human Resources</option>
-                      <option value="Finance">Finance</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      Status
-                    </label>
-                    <select
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      value={formData().status}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, status: e.currentTarget.value }))
-                      }
-                    >
-                      <option value="Active">Active</option>
-                      <option value="On Leave">On Leave</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div class="space-y-4 border-t border-[var(--color-border)] pt-4">
-                <h4 class="font-semibold text-[var(--color-text-primary)]">Attendance Requirements</h4>
-                
-                <div class="space-y-2">
-                  <div class="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      id="wifi_enabled_create"
-                      class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
-                      checked={formData().attendance_requirement.wifi_enabled}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          attendance_requirement: {
-                            ...prev.attendance_requirement,
-                            wifi_enabled: e.currentTarget.checked,
-                          },
-                        }))
-                      }
-                    />
-                    <label
-                      for="wifi_enabled_create"
-                      class="text-sm font-medium text-[var(--color-text-primary)] flex items-center gap-2"
-                    >
-                      <Wifi class="w-4 h-4" />
-                      WiFi Validation
-                    </label>
-                  </div>
-                  
-                  <Show when={formData().attendance_requirement.wifi_enabled}>
-                    <div class="ml-7 space-y-2">
-                      <p class="text-xs text-[var(--color-text-secondary)]">Select allowed WiFi networks:</p>
-                      <div class="flex flex-wrap gap-2">
-                        <For each={wifiSettings()}>
-                          {(wifi) => (
-                            <button
-                              type="button"
-                              onClick={() => toggleWiFiSSID(wifi.ssid, true)}
-                              class={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                                formData().attendance_requirement.wifi_ssids?.includes(wifi.ssid)
-                                  ? "bg-blue-100 text-blue-700 border-blue-300"
-                                  : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
-                              }`}
-                            >
-                              {wifi.ssid}
-                            </button>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                  </Show>
-                </div>
-
-                <div class="space-y-2">
-                  <div class="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      id="location_enabled_create"
-                      class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
-                      checked={formData().attendance_requirement.location_enabled}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          attendance_requirement: {
-                            ...prev.attendance_requirement,
-                            location_enabled: e.currentTarget.checked,
-                          },
-                        }))
-                      }
-                    />
-                    <label
-                      for="location_enabled_create"
-                      class="text-sm font-medium text-[var(--color-text-primary)] flex items-center gap-2"
-                    >
-                      <MapPin class="w-4 h-4" />
-                      Location Boundary Validation
-                    </label>
-                  </div>
-                  
-                  <Show when={formData().attendance_requirement.location_enabled}>
-                    <div class="ml-7 space-y-2">
-                      <p class="text-xs text-[var(--color-text-secondary)]">Select allowed locations:</p>
-                      <div class="flex flex-wrap gap-2">
-                        <For each={locationBoundaries()}>
-                          {(location) => (
-                            <button
-                              type="button"
-                              onClick={() => toggleLocationBoundary(location.id, true)}
-                              class={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                                formData().attendance_requirement.location_boundaries?.includes(location.id)
-                                  ? "bg-green-100 text-green-700 border-green-300"
-                                  : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
-                              }`}
-                            >
-                              {location.name}
-                            </button>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                  </Show>
-                </div>
-
-                <div class="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="face_enabled_create"
-                    class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
-                    checked={formData().attendance_requirement.face_recognition_enabled}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        attendance_requirement: {
-                          ...prev.attendance_requirement,
-                          face_recognition_enabled: e.currentTarget.checked,
-                        },
-                      }))
-                    }
-                  />
-                  <label
-                    for="face_enabled_create"
-                    class="text-sm font-medium text-[var(--color-text-primary)] flex items-center gap-2"
-                  >
-                    <Scan class="w-4 h-4" />
-                    Face Recognition
-                  </label>
-                </div>
-
-                <div class="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="fingerprint_enabled_create"
-                    class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
-                    checked={formData().attendance_requirement.fingerprint_enabled}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        attendance_requirement: {
-                          ...prev.attendance_requirement,
-                          fingerprint_enabled: e.currentTarget.checked,
-                        },
-                      }))
-                    }
-                  />
-                  <label
-                    for="fingerprint_enabled_create"
-                    class="text-sm font-medium text-[var(--color-text-primary)] flex items-center gap-2"
-                  >
-                    <Fingerprint class="w-4 h-4" />
-                    Fingerprint Validation
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div class="border-t border-[var(--color-border)] p-6 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  resetForm();
-                  setError(null);
-                }}
-                class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl hover:bg-[var(--color-light-gray)] transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createEmployee}
-                disabled={isLoading()}
-                class="flex-1 px-4 py-2.5 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-colors font-medium disabled:opacity-50"
-              >
-                {isLoading() ? "Creating..." : "Create Employee"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Show>
-
-      {/* Edit Employee Modal */}
-      <Show when={showEditModal()}>
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full my-8">
-            <div class="border-b border-[var(--color-border)] p-6 flex justify-between items-center">
-              <h3 class="text-xl font-bold text-[var(--color-text-primary)]">
-                Edit Employee: {editingEmployee()?.full_name}
-              </h3>
-              <button
-                onClick={() => {
-                  setShowEditModal(false);
-                  setEditingEmployee(null);
-                  setError(null);
-                }}
-                class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-2"
-              >
-                <X class="w-5 h-5" />
-              </button>
-            </div>
-
-            <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div class="space-y-4">
-                <h4 class="font-semibold text-[var(--color-text-primary)]">Basic Information</h4>
-                
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      NIK (Employee ID)
-                    </label>
-                    <input
-                      type="text"
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl bg-gray-100 text-gray-500"
-                      value={editingEmployee()?.nik}
-                      disabled
-                    />
-                    <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
-                      NIK cannot be changed
-                    </p>
-                  </div>
-
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      placeholder="e.g., John Doe"
-                      value={editFormData().full_name}
-                      onInput={(e) =>
-                        setEditFormData((prev) => ({ ...prev, full_name: e.currentTarget.value }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      Email *
-                    </label>
-                    <input
-                      type="email"
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      placeholder="e.g., john@example.com"
-                      value={editFormData().email}
-                      onInput={(e) =>
-                        setEditFormData((prev) => ({ ...prev, email: e.currentTarget.value }))
-                      }
-                    />
-                  </div>
-
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      New Password
-                    </label>
-                    <input
-                      type="password"
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      placeholder="Leave empty to keep current"
-                      value={editFormData().password}
-                      onInput={(e) =>
-                        setEditFormData((prev) => ({ ...prev, password: e.currentTarget.value }))
-                      }
-                    />
-                    <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
-                      Leave empty to keep current password
-                    </p>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-3 gap-4">
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      Role
-                    </label>
-                    <select
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      value={editFormData().role}
-                      onChange={(e) =>
-                        setEditFormData((prev) => ({ ...prev, role: e.currentTarget.value }))
-                      }
-                    >
-                      <option value="employee">Employee</option>
-                      <option value="manager">Manager</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      Department
-                    </label>
-                    <select
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      value={editFormData().department}
-                      onChange={(e) =>
-                        setEditFormData((prev) => ({ ...prev, department: e.currentTarget.value }))
-                      }
-                    >
-                      <option value="General">General</option>
-                      <option value="Engineering">Engineering</option>
-                      <option value="Marketing">Marketing</option>
-                      <option value="Human Resources">Human Resources</option>
-                      <option value="Finance">Finance</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
-                      Status
-                    </label>
-                    <select
-                      class="w-full px-4 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white"
-                      value={editFormData().status}
-                      onChange={(e) =>
-                        setEditFormData((prev) => ({ ...prev, status: e.currentTarget.value }))
-                      }
-                    >
-                      <option value="Active">Active</option>
-                      <option value="On Leave">On Leave</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div class="space-y-4 border-t border-[var(--color-border)] pt-4">
-                <h4 class="font-semibold text-[var(--color-text-primary)]">Attendance Requirements</h4>
-                
-                <div class="space-y-2">
-                  <div class="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      id="wifi_enabled_edit"
-                      class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
-                      checked={editFormData().attendance_requirement.wifi_enabled}
-                      onChange={(e) =>
-                        setEditFormData((prev) => ({
-                          ...prev,
-                          attendance_requirement: {
-                            ...prev.attendance_requirement,
-                            wifi_enabled: e.currentTarget.checked,
-                          },
-                        }))
-                      }
-                    />
-                    <label
-                      for="wifi_enabled_edit"
-                      class="text-sm font-medium text-[var(--color-text-primary)] flex items-center gap-2"
-                    >
-                      <Wifi class="w-4 h-4" />
-                      WiFi Validation
-                    </label>
-                  </div>
-                  
-                  <Show when={editFormData().attendance_requirement.wifi_enabled}>
-                    <div class="ml-7 space-y-2">
-                      <p class="text-xs text-[var(--color-text-secondary)]">Select allowed WiFi networks:</p>
-                      <div class="flex flex-wrap gap-2">
-                        <For each={wifiSettings()}>
-                          {(wifi) => (
-                            <button
-                              type="button"
-                              onClick={() => toggleWiFiSSID(wifi.ssid, false)}
-                              class={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                                editFormData().attendance_requirement.wifi_ssids?.includes(wifi.ssid)
-                                  ? "bg-blue-100 text-blue-700 border-blue-300"
-                                  : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
-                              }`}
-                            >
-                              {wifi.ssid}
-                            </button>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                  </Show>
-                </div>
-
-                <div class="space-y-2">
-                  <div class="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      id="location_enabled_edit"
-                      class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
-                      checked={editFormData().attendance_requirement.location_enabled}
-                      onChange={(e) =>
-                        setEditFormData((prev) => ({
-                          ...prev,
-                          attendance_requirement: {
-                            ...prev.attendance_requirement,
-                            location_enabled: e.currentTarget.checked,
-                          },
-                        }))
-                      }
-                    />
-                    <label
-                      for="location_enabled_edit"
-                      class="text-sm font-medium text-[var(--color-text-primary)] flex items-center gap-2"
-                    >
-                      <MapPin class="w-4 h-4" />
-                      Location Boundary Validation
-                    </label>
-                  </div>
-                  
-                  <Show when={editFormData().attendance_requirement.location_enabled}>
-                    <div class="ml-7 space-y-2">
-                      <p class="text-xs text-[var(--color-text-secondary)]">Select allowed locations:</p>
-                      <div class="flex flex-wrap gap-2">
-                        <For each={locationBoundaries()}>
-                          {(location) => (
-                            <button
-                              type="button"
-                              onClick={() => toggleLocationBoundary(location.id, false)}
-                              class={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                                editFormData().attendance_requirement.location_boundaries?.includes(location.id)
-                                  ? "bg-green-100 text-green-700 border-green-300"
-                                  : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
-                              }`}
-                            >
-                              {location.name}
-                            </button>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                  </Show>
-                </div>
-
-                <div class="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="face_enabled_edit"
-                    class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
-                    checked={editFormData().attendance_requirement.face_recognition_enabled}
-                    onChange={(e) =>
-                      setEditFormData((prev) => ({
-                        ...prev,
-                        attendance_requirement: {
-                          ...prev.attendance_requirement,
-                          face_recognition_enabled: e.currentTarget.checked,
-                        },
-                      }))
-                    }
-                  />
-                  <label
-                    for="face_enabled_edit"
-                    class="text-sm font-medium text-[var(--color-text-primary)] flex items-center gap-2"
-                  >
-                    <Scan class="w-4 h-4" />
-                    Face Recognition
-                  </label>
-                </div>
-
-                <div class="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="fingerprint_enabled_edit"
-                    class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
-                    checked={editFormData().attendance_requirement.fingerprint_enabled}
-                    onChange={(e) =>
-                      setEditFormData((prev) => ({
-                        ...prev,
-                        attendance_requirement: {
-                          ...prev.attendance_requirement,
-                          fingerprint_enabled: e.currentTarget.checked,
-                        },
-                      }))
-                    }
-                  />
-                  <label
-                    for="fingerprint_enabled_edit"
-                    class="text-sm font-medium text-[var(--color-text-primary)] flex items-center gap-2"
-                  >
-                    <Fingerprint class="w-4 h-4" />
-                    Fingerprint Validation
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div class="border-t border-[var(--color-border)] p-6 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowEditModal(false);
-                  setEditingEmployee(null);
-                  setError(null);
-                }}
-                class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl hover:bg-[var(--color-light-gray)] transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={updateEmployee}
-                disabled={isLoading()}
-                class="flex-1 px-4 py-2.5 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-colors font-medium disabled:opacity-50"
-              >
-                {isLoading() ? "Updating..." : "Update Employee"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Show>
     </div>
+  </Show>
+
+  {/* Bulk Attendance Requirements Modal */ }
+  <Show when={showBulkAttendanceModal()}>
+    <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="border-b border-[var(--color-border)] p-6 flex justify-between items-center">
+          <div>
+            <h3 class="text-xl font-bold text-[var(--color-text-primary)]">
+              Set Attendance Requirements
+            </h3>
+            <p class="text-sm text-[var(--color-text-secondary)] mt-1">
+              Apply to {selectedEmployees().size} selected employees
+            </p>
+          </div>
+          <button
+            onClick={() => setShowBulkAttendanceModal(false)}
+            class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-2"
+          >
+            <X class="w-5 h-5" />
+          </button>
+        </div>
+
+        <div class="p-6 space-y-6">
+          {/* WiFi Validation */}
+          <div class="space-y-3">
+            <div class="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="bulk_wifi"
+                class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
+                checked={bulkAttendanceData().wifi_enabled}
+                onChange={(e) =>
+                  setBulkAttendanceData((prev) => ({ ...prev, wifi_enabled: e.currentTarget.checked }))
+                }
+              />
+              <label for="bulk_wifi" class="text-sm font-semibold text-[var(--color-text-primary)] flex items-center gap-2">
+                <Wifi class="w-5 h-5 text-blue-600" />
+                WiFi Validation
+              </label>
+            </div>
+
+            <Show when={bulkAttendanceData().wifi_enabled}>
+              <div class="ml-7 space-y-2">
+                <p class="text-xs text-[var(--color-text-secondary)]">Select allowed WiFi networks:</p>
+                <div class="flex flex-wrap gap-2">
+                  <For each={wifiSettings()}>
+                    {(wifi) => {
+                      const isSelected = () => bulkAttendanceData().wifi_ssids?.includes(wifi.ssid) || false;
+                      const toggleWiFi = () => {
+                        const current = bulkAttendanceData().wifi_ssids || [];
+                        const updated = isSelected()
+                          ? current.filter((s: string) => s !== wifi.ssid)
+                          : [...current, wifi.ssid];
+                        setBulkAttendanceData((prev) => ({ ...prev, wifi_ssids: updated }));
+                      };
+                      return (
+                        <button
+                          type="button"
+                          onClick={toggleWiFi}
+                          class={`px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${isSelected()
+                              ? "bg-blue-100 text-blue-700 border-blue-300"
+                              : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                            }`}
+                        >
+                          {wifi.ssid}
+                        </button>
+                      );
+                    }}
+                  </For>
+                </div>
+              </div>
+            </Show>
+          </div>
+
+          {/* Location Validation */}
+          <div class="space-y-3">
+            <div class="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="bulk_location"
+                class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
+                checked={bulkAttendanceData().location_enabled}
+                onChange={(e) =>
+                  setBulkAttendanceData((prev) => ({ ...prev, location_enabled: e.currentTarget.checked }))
+                }
+              />
+              <label for="bulk_location" class="text-sm font-semibold text-[var(--color-text-primary)] flex items-center gap-2">
+                <MapPin class="w-5 h-5 text-green-600" />
+                Location Boundary Validation
+              </label>
+            </div>
+
+            <Show when={bulkAttendanceData().location_enabled}>
+              <div class="ml-7 space-y-2">
+                <p class="text-xs text-[var(--color-text-secondary)]">Select allowed locations:</p>
+                <div class="flex flex-wrap gap-2">
+                  <For each={locationBoundaries()}>
+                    {(location) => {
+                      const isSelected = () => bulkAttendanceData().location_boundaries?.includes(location.id) || false;
+                      const toggleLocation = () => {
+                        const current = bulkAttendanceData().location_boundaries || [];
+                        const updated = isSelected()
+                          ? current.filter((l: string) => l !== location.id)
+                          : [...current, location.id];
+                        setBulkAttendanceData((prev) => ({ ...prev, location_boundaries: updated }));
+                      };
+                      return (
+                        <button
+                          type="button"
+                          onClick={toggleLocation}
+                          class={`px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${isSelected()
+                              ? "bg-green-100 text-green-700 border-green-300"
+                              : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                            }`}
+                        >
+                          {location.name}
+                        </button>
+                      );
+                    }}
+                  </For>
+                </div>
+              </div>
+            </Show>
+          </div>
+
+          {/* Face Recognition */}
+          <div class="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="bulk_face"
+              class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
+              checked={bulkAttendanceData().face_recognition_enabled}
+              onChange={(e) =>
+                setBulkAttendanceData((prev) => ({ ...prev, face_recognition_enabled: e.currentTarget.checked }))
+              }
+            />
+            <label for="bulk_face" class="text-sm font-semibold text-[var(--color-text-primary)] flex items-center gap-2">
+              <Scan class="w-5 h-5 text-purple-600" />
+              Face Recognition
+            </label>
+          </div>
+
+          {/* Fingerprint */}
+          <div class="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="bulk_fingerprint"
+              class="w-4 h-4 text-[var(--color-primary-button)] border-[var(--color-border)] rounded focus:ring-2 focus:ring-[var(--color-accent)]"
+              checked={bulkAttendanceData().fingerprint_enabled}
+              onChange={(e) =>
+                setBulkAttendanceData((prev) => ({ ...prev, fingerprint_enabled: e.currentTarget.checked }))
+              }
+            />
+            <label for="bulk_fingerprint" class="text-sm font-semibold text-[var(--color-text-primary)] flex items-center gap-2">
+              <Fingerprint class="w-5 h-5 text-orange-600" />
+              Fingerprint Validation
+            </label>
+          </div>
+        </div>
+
+        <div class="border-t border-[var(--color-border)] p-6 flex gap-3">
+          <button
+            onClick={() => setShowBulkAttendanceModal(false)}
+            class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl hover:bg-[var(--color-light-gray)] transition-colors font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={bulkUpdateAttendanceRequirements}
+            disabled={isLoading()}
+            class="flex-1 px-4 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors font-medium disabled:opacity-50"
+          >
+            {isLoading() ? "Applying..." : `Apply to ${selectedEmployees().size} Employees`}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Show>
+
+  {/* Import Preview Modal */ }
+  <Show when={showImportModal()}>
+    <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="border-b border-[var(--color-border)] p-6 flex justify-between items-center">
+          <div>
+            <h3 class="text-xl font-bold text-[var(--color-text-primary)]">
+              Import Employees from Excel
+            </h3>
+            <p class="text-sm text-[var(--color-text-secondary)] mt-1">
+              Upload an Excel file with employee data
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setShowImportModal(false);
+              setImportFile(null);
+              setImportPreview([]);
+            }}
+            class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] p-2"
+          >
+            <X class="w-5 h-5" />
+          </button>
+        </div>
+
+        <div class="p-6 space-y-6">
+          {/* File Upload */}
+          <div class="mb-6">
+            <label class="block text-sm font-semibold text-[var(--color-text-primary)] mb-2">
+              Upload Employees Data
+            </label>
+            <div class="flex items-center gap-4">
+              <label class="flex-1 flex flex-col items-center justify-center gap-3 w-full h-40 px-4 py-6 border-2 border-dashed border-[var(--color-border)] rounded-2xl hover:border-blue-500 hover:bg-blue-50/50 transition-all cursor-pointer bg-[var(--color-light-gray)]/30 group">
+                <div class="p-3 bg-white rounded-xl shadow-sm border border-[var(--color-border)] group-hover:scale-110 group-hover:border-blue-200 group-hover:shadow-md transition-all">
+                  <FileSpreadsheet class="w-7 h-7 text-blue-500" />
+                </div>
+                <div class="text-center">
+                  <span class="text-sm font-bold text-[var(--color-text-primary)] block mb-1">
+                    {importFile() ? importFile()!.name : "Click to select an Excel file"}
+                  </span>
+                  <span class="text-xs text-[var(--color-text-secondary)]">
+                    Only .xlsx or .xls files are supported
+                  </span>
+                </div>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  class="hidden"
+                  onChange={handleFileUpload}
+                />
+              </label>
+            </div>
+
+            <div class="mt-4 flex items-start gap-2.5 bg-blue-50 p-3.5 rounded-xl border border-blue-100">
+              <div class="mt-0.5 bg-white p-1 rounded-full shadow-sm"><FileDown class="w-3.5 h-3.5 text-blue-600" /></div>
+              <p class="text-xs text-blue-800 leading-relaxed">
+                Make sure your data matches the system's template format to prevent errors. <br />
+                <button type="button" onClick={downloadTemplate} class="font-bold underline hover:text-blue-900 mt-0.5">Download the template here</button> if you don't have it yet.
+              </p>
+            </div>
+          </div>
+
+          {/* Preview */}
+          <Show when={importPreview().length > 0}>
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-bold text-[var(--color-text-primary)]">
+                  Preview (First 5 rows)
+                </h4>
+                <span class="text-sm text-[var(--color-text-secondary)]">
+                  Total: {importPreview().length} employees
+                </span>
+              </div>
+              <div class="border border-[var(--color-border)] rounded-xl overflow-hidden">
+                <div class="overflow-x-auto">
+                  <table class="min-w-full divide-y divide-[var(--color-border)]">
+                    <thead class="bg-[var(--color-light-gray)]/50">
+                      <tr>
+                        <th class="px-4 py-3 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase">NIK</th>
+                        <th class="px-4 py-3 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase">Name</th>
+                        <th class="px-4 py-3 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase">Email</th>
+                        <th class="px-4 py-3 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase">Department</th>
+                        <th class="px-4 py-3 text-left text-xs font-bold text-[var(--color-text-secondary)] uppercase">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-[var(--color-border)]">
+                      <For each={importPreview().slice(0, 5)}>
+                        {(row: any) => (
+                          <tr class="hover:bg-[var(--color-light-gray)]/30">
+                            <td class="px-4 py-3 text-sm text-[var(--color-text-primary)]">{row.NIK || row.nik}</td>
+                            <td class="px-4 py-3 text-sm text-[var(--color-text-primary)]">{row["Full Name"] || row.full_name}</td>
+                            <td class="px-4 py-3 text-sm text-[var(--color-text-secondary)]">{row.Email || row.email}</td>
+                            <td class="px-4 py-3 text-sm text-[var(--color-text-secondary)]">{row.Department || row.department}</td>
+                            <td class="px-4 py-3 text-sm">
+                              <span class="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">
+                                {row.Status || row.status || "Active"}
+                              </span>
+                            </td>
+                          </tr>
+                        )}
+                      </For>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <Show when={importPreview().length > 5}>
+                <p class="mt-2 text-xs text-[var(--color-text-secondary)] text-center">
+                  ... and {importPreview().length - 5} more employees
+                </p>
+              </Show>
+            </div>
+          </Show>
+        </div>
+
+        <div class="border-t border-[var(--color-border)] p-6 flex gap-3">
+          <button
+            onClick={() => {
+              setShowImportModal(false);
+              setImportFile(null);
+              setImportPreview([]);
+            }}
+            class="flex-1 px-4 py-2.5 border border-[var(--color-border)] rounded-xl hover:bg-[var(--color-light-gray)] transition-colors font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={importEmployees}
+            disabled={isLoading() || importPreview().length === 0}
+            class="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
+          >
+            {isLoading() ? "Importing..." : `Import ${importPreview().length} Employees`}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Show>
+    </div >
   );
 };
 
-export default Employee;
+export default EmployeeManagement;
