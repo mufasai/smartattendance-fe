@@ -25,7 +25,7 @@ const ApprovalCuti: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
   const [confirmAction, setConfirmAction] = createSignal<{ id: string, action: "APPROVED" | "REJECTED" } | null>(null);
 
-  const role = auth.role(); // "manager" or "hrd"
+  const role = auth.role(); // "manager" or "hrd"  
   const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080/api";
 
   const fetchLeaves = async () => {

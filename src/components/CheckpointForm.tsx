@@ -1,7 +1,13 @@
-import { type Component, createSignal, For } from "solid-js";
+import { type Component, createSignal, For, onMount } from "solid-js";
 import Input from "./ui/Input";
 import Button from "./ui/Button";
 import { Save, MapPin } from "lucide-solid";
+
+export interface Area {
+  id: string;
+  name: string;
+  description?: string;
+}
 
 export interface Area {
   id: string;

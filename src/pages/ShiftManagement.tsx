@@ -389,9 +389,30 @@ const ShiftManagement: Component = () => {
         created_at: new Date().toISOString(),
       };
 
+      // Create individual shift schedules in backend
+      const shiftPromises = group.employees.map(emp => 
+        fetch(`${BASE_URL}/shift`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nik: emp.nik,
+            shift_type: shiftType.name,
+            date: data.date,
+            start_time: shiftType.start_time,
+            end_time: shiftType.end_time,
+            location: data.location,
+            tasks: data.tasks.filter(t => t.trim() !== ""),
+            notes: data.notes || null,
+          }),
+        })
+      );
+
+      await Promise.all(shiftPromises);
+
       setShiftAssignments(prev => [...prev, newAssignment]);
       setShowAssignShiftModal(false);
       resetAssignmentForm();
+      fetchShifts(); // Sync Active Shifts tab
     } catch (err: any) {
       setError(err.message || "Network error");
     } finally {
