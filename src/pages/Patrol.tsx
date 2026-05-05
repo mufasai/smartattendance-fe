@@ -76,6 +76,7 @@ interface ActivePatrol {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const BASE_URL = `${config.apiUrl}`;
+const STATIC_URL = BASE_URL.replace('/api', ''); // Remove /api for static files
 
 /** Extract string ID from SurrealDB Thing format (returns only the ID part) */
 const extractId = (raw: any): string => {
@@ -381,7 +382,10 @@ const Patrol: Component = () => {
     fetchAssignments();
   };
 
-  const getAssigneeName = (type: string, id: string) => {
+  const getAssigneeName = (type: string, id: string, assigneeName?: string) => {
+    // If assignee_name is provided from backend, use it directly
+    if (assigneeName) return assigneeName;
+    
     if (!id) return "N/A";
     const cleanId = extractId(id).toLowerCase();
 
@@ -418,6 +422,7 @@ const Patrol: Component = () => {
 
   const [reportModalOpen, setReportModalOpen] = createSignal(false);
   const [incidents, setIncidents] = createSignal<any[]>([]);
+  const [checkpointReports, setCheckpointReports] = createSignal<any[]>([]);
   const [newIncident, setNewIncident] = createSignal({
     title: "",
     description: "",
@@ -426,6 +431,8 @@ const Patrol: Component = () => {
     photo: null as File | null,
     photoPreview: ""
   });
+  const [selectedIncidentPhoto, setSelectedIncidentPhoto] = createSignal<string | null>(null);
+  const [selectedReportPhoto, setSelectedReportPhoto] = createSignal<string | null>(null);
 
   const handleFileChange = (e: Event) => {
     const target = e.currentTarget as HTMLInputElement;
@@ -451,6 +458,17 @@ const Patrol: Component = () => {
       if (data.status === "success") setIncidents(data.data || []);
     } catch (e) {
       console.error("Error fetching incidents:", e);
+    }
+  };
+
+  // Fetch Checkpoint Reports
+  const fetchCheckpointReports = async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/patrol/checkpoint-reports`);
+      const data = await res.json();
+      if (data.status === "success") setCheckpointReports(data.data || []);
+    } catch (e) {
+      console.error("Error fetching checkpoint reports:", e);
     }
   };
 
@@ -510,10 +528,15 @@ const Patrol: Component = () => {
       fetchAreas(),
       fetchAssignments(),
       fetchActivePatrols(),
-      fetchIncidents()
+      fetchIncidents(),
+      fetchCheckpointReports()
     ]);
 
-    const interval = setInterval(fetchActivePatrols, 10000);
+    const interval = setInterval(() => {
+      fetchActivePatrols();
+      fetchIncidents();
+      fetchCheckpointReports();
+    }, 10000);
     return () => clearInterval(interval);
   });
 
@@ -888,17 +911,39 @@ const Patrol: Component = () => {
                   <p class="text-[10px] font-black uppercase tracking-widest leading-loose">Tidak ada<br/>insiden aktif</p>
                 </div>
               </Show>
-              <For each={incidents().slice(0, 5)}>
+              <For each={incidents().slice(0, 10)}>
                 {(item) => (
                   <div class="p-4 rounded-2xl border border-red-100 bg-red-50/30 hover:bg-white hover:border-red-300 transition-all cursor-default">
                     <div class="flex justify-between items-start mb-2">
                       <div class="text-[11px] font-black text-red-700 uppercase">{item.title}</div>
-                      <div class="text-[8px] font-bold text-gray-400">{new Date(item.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                      <div class="text-[8px] font-bold text-gray-400">
+                        {item.created_at ? new Date(item.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-'}
+                      </div>
                     </div>
-                    <p class="text-[10px] text-gray-600 line-clamp-2 leading-relaxed">{item.description}</p>
-                    <div class="mt-3 flex items-center gap-2 text-[9px] font-bold text-gray-400">
+                    <p class="text-[10px] text-gray-600 line-clamp-2 leading-relaxed mb-3">{item.description}</p>
+                    
+                    {/* Photo Display */}
+                    <Show when={item.photo_url}>
+                      <div class="mb-3 relative group">
+                        <img 
+                          src={`${STATIC_URL}${item.photo_url}`}
+                          alt="Incident photo"
+                          class="w-full h-32 object-cover rounded-xl border border-red-100 cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => setSelectedIncidentPhoto(`${STATIC_URL}${item.photo_url}`)}
+                        />
+                        <div class="absolute top-2 right-2 bg-red-500 text-white px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Camera class="w-3 h-3 inline mr-1" />
+                          Klik untuk perbesar
+                        </div>
+                      </div>
+                    </Show>
+                    
+                    <div class="flex items-center gap-2 text-[9px] font-bold text-gray-400">
                       <MapPin class="w-3 h-3" />
-                      <span class="truncate">{item.location}</span>
+                      <span class="truncate">{item.latitude?.toFixed(4)}, {item.longitude?.toFixed(4)}</span>
+                    </div>
+                    <div class="mt-2 text-[8px] font-bold text-gray-400">
+                      NIK: {item.nik} • {item.timestamp}
                     </div>
                   </div>
                 )}
@@ -1454,6 +1499,121 @@ const Patrol: Component = () => {
         variant="danger"
         isLoading={isLoading()}
       />
+
+      {/* ── Photo Preview Modal for Incidents ── */}
+      <Show when={selectedIncidentPhoto()}>
+        <div 
+          class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedIncidentPhoto(null)}
+        >
+          <div class="relative max-w-4xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setSelectedIncidentPhoto(null)}
+              class="absolute -top-12 right-0 text-white hover:text-red-400 transition-colors"
+            >
+              <div class="flex items-center gap-2 text-sm font-bold">
+                <span>Tutup</span>
+                <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">✕</div>
+              </div>
+            </button>
+            <img 
+              src={selectedIncidentPhoto()!} 
+              alt="Incident photo preview"
+              class="w-full h-full object-contain rounded-2xl shadow-2xl"
+            />
+          </div>
+        </div>
+      </Show>
+
+      {/* ── Photo Preview Modal for Checkpoint Reports ── */}
+      <Show when={selectedReportPhoto()}>
+        <div 
+          class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedReportPhoto(null)}
+        >
+          <div class="relative max-w-4xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setSelectedReportPhoto(null)}
+              class="absolute -top-12 right-0 text-white hover:text-red-400 transition-colors"
+            >
+              <div class="flex items-center gap-2 text-sm font-bold">
+                <span>Tutup</span>
+                <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">✕</div>
+              </div>
+            </button>
+            <img 
+              src={selectedReportPhoto()!} 
+              alt="Checkpoint report photo preview"
+              class="w-full h-full object-contain rounded-2xl shadow-2xl"
+            />
+          </div>
+        </div>
+      </Show>
+
+      {/* ── Checkpoint Reports Section (Floating Bottom Panel) ── */}
+      <Show when={checkpointReports().length > 0}>
+        <div class="fixed bottom-6 right-6 w-96 max-h-[500px] bg-white rounded-3xl shadow-2xl border border-[var(--color-border)] overflow-hidden z-40">
+          <div class="bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-4 text-white">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                  <CheckCircle2 class="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 class="font-black text-sm uppercase tracking-tight">Laporan Checkpoint</h4>
+                  <p class="text-[10px] font-bold opacity-90">{checkpointReports().length} laporan tercatat</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="overflow-y-auto max-h-[400px] p-4 space-y-3 custom-scrollbar">
+            <For each={checkpointReports().slice(0, 20)}>
+              {(report) => {
+                const checkpoint = checkpoints().find(c => c.id === extractId(report.checkpoint_id));
+                return (
+                  <div class="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/30 hover:bg-white hover:border-emerald-300 transition-all">
+                    <div class="flex justify-between items-start mb-2">
+                      <div class="flex items-center gap-2">
+                        <MapPin class="w-4 h-4 text-emerald-600" />
+                        <div class="text-[11px] font-black text-emerald-700 uppercase">
+                          {checkpoint?.name || 'Unknown Checkpoint'}
+                        </div>
+                      </div>
+                      <div class="text-[8px] font-bold text-gray-400">
+                        {report.created_at ? new Date(report.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-'}
+                      </div>
+                    </div>
+                    
+                    <p class="text-[10px] text-gray-600 leading-relaxed mb-3">{report.report}</p>
+                    
+                    {/* Photo Display */}
+                    <Show when={report.photo_url}>
+                      <div class="relative group">
+                        <img 
+                          src={`${STATIC_URL}${report.photo_url}`}
+                          alt="Checkpoint report photo"
+                          class="w-full h-32 object-cover rounded-xl border border-emerald-100 cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => setSelectedReportPhoto(`${STATIC_URL}${report.photo_url}`)}
+                        />
+                        <div class="absolute top-2 right-2 bg-emerald-500 text-white px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Camera class="w-3 h-3 inline mr-1" />
+                          Klik untuk perbesar
+                        </div>
+                      </div>
+                    </Show>
+                    
+                    <div class="mt-3 flex items-center justify-between text-[8px] font-bold text-gray-400">
+                      <span>NIK: {report.nik}</span>
+                      <span>Assignment: {extractId(report.assignment_id).slice(0, 8)}...</span>
+                    </div>
+                  </div>
+                );
+              }}
+            </For>
+          </div>
+        </div>
+      </Show>
     </div>
   );
 };
