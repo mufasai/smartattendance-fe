@@ -155,53 +155,24 @@ const EmployeeGroupManagement: Component = () => {
                 console.log("Mapped Data:", mappedData);
                 console.log("Shift Task:", shiftTask());
 
-                // Filter employees by department (very flexible)
+                // Filter employees by department (flexible matching)
                 const task = shiftTask();
                 if (task) {
-                    // Very flexible filtering with word-based matching
-                    const filtered = mappedData.filter(
-                        (emp: Employee) => {
-                            // Extract words from department names for flexible matching
-                            // "Security" matches "Security Department", "Security Operations", etc.
-                            const taskDeptWords = task.department.toLowerCase().split(/\s+/);
-                            const empDeptWords = emp.department.toLowerCase().split(/\s+/);
+                    const taskDept = task.department.toLowerCase().trim();
+                    const filtered = mappedData.filter((emp: Employee) => {
+                        const empDept = (emp.department || "").toLowerCase().trim();
+                        // Match if either contains the other (handles "Security" vs "Security Department")
+                        const deptMatch = !taskDept ||
+                            empDept.includes(taskDept) ||
+                            taskDept.includes(empDept);
+                        return deptMatch;
+                    });
 
-                            // Check if any word from task department appears in employee department
-                            const deptMatch = !task.department ||
-                                taskDeptWords.some(word =>
-                                    empDeptWords.some(empWord =>
-                                        empWord.includes(word) || word.includes(empWord)
-                                    )
-                                );
-
-                            // Very lenient location filter - only filter if both have location AND they don't match
-                            // If employee has no location field, we include them
-                            const locMatch = !task.working_location ||
-                                !emp.location ||
-                                emp.location.toLowerCase().includes(task.working_location.toLowerCase()) ||
-                                task.working_location.toLowerCase().includes(emp.location.toLowerCase());
-
-                            console.log(`Employee ${emp.full_name}:`, {
-                                department: emp.department,
-                                taskDepartment: task.department,
-                                location: emp.location,
-                                taskLocation: task.working_location,
-                                working_time: emp.working_time,
-                                deptMatch,
-                                locMatch,
-                                included: deptMatch && locMatch
-                            });
-
-                            return deptMatch && locMatch;
-                        }
-                    );
-
-                    console.log("Filtered Employees:", filtered);
-                    console.log(`Filter result: ${filtered.length} out of ${mappedData.length} employees match criteria`);
+                    console.log(`Filter: ${filtered.length}/${mappedData.length} employees match dept "${task.department}"`);
                     setAllEmployees(filtered);
                     setAvailableEmployees(filtered);
                 } else {
-                    console.log("No shift task, showing all employees");
+                    // No task filter — show all employees
                     setAllEmployees(mappedData);
                     setAvailableEmployees(mappedData);
                 }
@@ -225,11 +196,11 @@ const EmployeeGroupManagement: Component = () => {
 
                 const task = shiftTask();
                 if (task) {
-                    const filtered = mockEmployees.filter(
-                        emp =>
-                            emp.department === task.department &&
-                            emp.location === task.working_location
-                    );
+                    const taskDept = task.department.toLowerCase().trim();
+                    const filtered = mockEmployees.filter(emp => {
+                        const empDept = emp.department.toLowerCase().trim();
+                        return !taskDept || empDept.includes(taskDept) || taskDept.includes(empDept);
+                    });
                     setAllEmployees(filtered);
                     setAvailableEmployees(filtered);
                 } else {
@@ -239,7 +210,6 @@ const EmployeeGroupManagement: Component = () => {
             }
         } catch (err) {
             console.error("Failed to fetch employees:", err);
-            // Use mock data on error
             const mockEmployees: Employee[] = [
                 { id: "1", nik: "001", full_name: "Agus Santoso", department: "Security", working_time: "Shift", location: "Head Office" },
                 { id: "2", nik: "002", full_name: "Budi Prasetyo", department: "Security", working_time: "Shift", location: "Head Office" },
@@ -254,8 +224,19 @@ const EmployeeGroupManagement: Component = () => {
                 { id: "11", nik: "011", full_name: "Kurniawan Eko", department: "Security", working_time: "Shift", location: "Head Office" },
                 { id: "12", nik: "012", full_name: "Lukman Hakim", department: "Security", working_time: "Shift", location: "Head Office" },
             ];
-            setAllEmployees(mockEmployees);
-            setAvailableEmployees(mockEmployees);
+            const errTask = shiftTask();
+            if (errTask) {
+                const taskDept = errTask.department.toLowerCase().trim();
+                const filtered = mockEmployees.filter(emp => {
+                    const empDept = emp.department.toLowerCase().trim();
+                    return !taskDept || empDept.includes(taskDept) || taskDept.includes(empDept);
+                });
+                setAllEmployees(filtered);
+                setAvailableEmployees(filtered);
+            } else {
+                setAllEmployees(mockEmployees);
+                setAvailableEmployees(mockEmployees);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -486,6 +467,8 @@ const EmployeeGroupManagement: Component = () => {
 
     onMount(() => {
         fetchShiftTask();
+        // fetchShiftTask is synchronous (reads localStorage), so shiftTask() is
+        // already set by the time fetchEmployees runs
         fetchEmployees();
     });
 

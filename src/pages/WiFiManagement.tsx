@@ -137,7 +137,7 @@ const WiFiManagement: Component = () => {
 
     try {
       const response = await fetch(`${BASE_URL}/wifi-settings/${wifiId}`, {
-        method: "PATCH",
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
@@ -172,7 +172,7 @@ const WiFiManagement: Component = () => {
 
     try {
       const response = await fetch(`${BASE_URL}/wifi-settings/${wifiId}`, {
-        method: "PATCH",
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
