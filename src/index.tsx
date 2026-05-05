@@ -2,6 +2,7 @@
 import { render } from "solid-js/web";
 import { Router, Route } from "@solidjs/router";
 import { lazy } from "solid-js";
+import { Toaster } from "solid-toast";
 import "./index.css";
 import App from "./App";
 import auth from "./store/auth";
@@ -27,17 +28,20 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
 
 render(
   () => (
-    <Router>
-      <Route path="/login" component={Login} />
-      <Route path="/" component={App}>
-        <Route path="/" component={Dashboard} />
-        <Route path="/employee" component={Employee} />
-        <Route path="/shift" component={ShiftManagement} />
-        <Route path="/shift-management/:id/groups" component={EmployeeGroupManagement} />
-        <Route path="/shift-management/:id/schedule" component={ShiftSchedule} />
-        <Route path="/patrol" component={Patrol} />
-      </Route>
-    </Router>
+    <>
+      <Toaster position="top-right" />
+      <Router>
+        <Route path="/login" component={Login} />
+        <Route path="/" component={App}>
+          <Route path="/" component={Dashboard} />
+          <Route path="/employee" component={Employee} />
+          <Route path="/shift" component={ShiftManagement} />
+          <Route path="/shift-management/:id/groups" component={EmployeeGroupManagement} />
+          <Route path="/shift-management/:id/schedule" component={ShiftSchedule} />
+          <Route path="/patrol" component={Patrol} />
+        </Route>
+      </Router>
+    </>
   ),
   root!,
 );
