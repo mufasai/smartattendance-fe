@@ -13,6 +13,8 @@ const Login = lazy(() => import("./pages/Login"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Employee = lazy(() => import("./pages/Employee"));
 const ShiftManagement = lazy(() => import("./pages/ShiftManagement"));
+const EmployeeGroupManagement = lazy(() => import("./pages/EmployeeGroupManagement"));
+const ShiftSchedule = lazy(() => import("./pages/ShiftSchedule"));
 const Patrol = lazy(() => import("./pages/Patrol"));
 
 const root = document.getElementById("root");
@@ -31,6 +33,8 @@ render(
         <Route path="/" component={Dashboard} />
         <Route path="/employee" component={Employee} />
         <Route path="/shift" component={ShiftManagement} />
+        <Route path="/shift-management/:id/groups" component={EmployeeGroupManagement} />
+        <Route path="/shift-management/:id/schedule" component={ShiftSchedule} />
         <Route path="/patrol" component={Patrol} />
       </Route>
     </Router>
