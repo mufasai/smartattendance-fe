@@ -12,14 +12,14 @@ const Employee: Component = () => {
   return (
     <div class="space-y-6">
       {/* Header */}
-      <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-100">
+      {/* <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-2xl border border-blue-100">
         <h2 class="text-3xl font-bold text-[var(--color-text-primary)] mb-2">
           Employee & Attendance Management
         </h2>
         <p class="text-sm text-[var(--color-text-secondary)]">
           Comprehensive employee management with attendance configuration
         </p>
-      </div>
+      </div> */}
 
       {/* Tabs */}
       <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-2">
