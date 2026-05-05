@@ -135,6 +135,7 @@ const EmployeeManagement: Component = () => {
     position: "",
     emergency_contact: "",
     emergency_phone: "",
+    attendance_requirement: null as AttendanceRequirement | null,
   });
 
   const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080/api";
@@ -305,12 +306,34 @@ const EmployeeManagement: Component = () => {
     setSuccess(null);
 
     try {
+      const payload: Record<string, any> = {
+        full_name: data.full_name,
+        email: data.email,
+        role: data.role,
+        department: data.department,
+        status: data.status,
+        phone: data.phone,
+        address: data.address,
+        date_of_birth: data.date_of_birth,
+        hire_date: data.hire_date,
+        position: data.position,
+        emergency_contact: data.emergency_contact,
+        emergency_phone: data.emergency_phone,
+      };
+
+      // Only include password if provided
+      if (data.password) payload.password = data.password;
+
+      // Only include attendance_requirement if it was set (not null) — 
+      // sending null would wipe the existing value in the backend
+      if (data.attendance_requirement !== null) {
+        payload.attendance_requirement = data.attendance_requirement;
+      }
+
       const response = await fetch(`${BASE_URL}/employees/${employee.nik}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
 
       const text = await response.text();
@@ -386,6 +409,7 @@ const EmployeeManagement: Component = () => {
       position: employee.position || "",
       emergency_contact: employee.emergency_contact || "",
       emergency_phone: employee.emergency_phone || "",
+      attendance_requirement: employee.attendance_requirement ?? null,
     });
     setShowEditModal(true);
   };
@@ -454,6 +478,37 @@ const EmployeeManagement: Component = () => {
       const allNiks = filteredEmployees().map(emp => emp.nik);
       setSelectedEmployees(new Set<string>(allNiks));
     }
+  };
+
+  const openBulkAttendanceModal = () => {
+    // Pre-populate from the first selected employee that has attendance requirements
+    const selectedNiks = Array.from(selectedEmployees());
+    const firstWithReq = employees().find(
+      (e) => selectedNiks.includes(e.nik) && e.attendance_requirement != null
+    );
+
+    if (firstWithReq?.attendance_requirement) {
+      const req = firstWithReq.attendance_requirement;
+      setBulkAttendanceData({
+        wifi_enabled: req.wifi_enabled,
+        wifi_ssids: req.wifi_ssids ?? [],
+        location_enabled: req.location_enabled,
+        location_boundaries: req.location_boundaries ?? [],
+        face_recognition_enabled: req.face_recognition_enabled,
+        fingerprint_enabled: req.fingerprint_enabled,
+      });
+    } else {
+      setBulkAttendanceData({
+        wifi_enabled: false,
+        wifi_ssids: [],
+        location_enabled: false,
+        location_boundaries: [],
+        face_recognition_enabled: false,
+        fingerprint_enabled: false,
+      });
+    }
+
+    setShowBulkAttendanceModal(true);
   };
 
   const bulkUpdateAttendanceRequirements = async () => {
@@ -676,114 +731,117 @@ const EmployeeManagement: Component = () => {
 
   return (
     <div class="space-y-6">
-      {/* Action Buttons */}
-      <div class="flex flex-wrap justify-between items-center gap-2">
-        <div class="flex gap-2">
-          <Show when={selectedEmployees().size > 0}>
-            <button
-              onClick={() => setShowBulkAttendanceModal(true)}
-              class="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-xl hover:bg-purple-700 transition-all shadow-sm font-medium"
-            >
-              <Settings class="w-4 h-4" />
-              Set Attendance ({selectedEmployees().size})
-            </button>
-            <button
-              onClick={() => setSelectedEmployees(new Set())}
-              class="flex items-center gap-2 bg-gray-600 text-white px-4 py-2 rounded-xl hover:bg-gray-700 transition-all shadow-sm font-medium"
-            >
-              <X class="w-4 h-4" />
-              Clear Selection
-            </button>
-          </Show>
+      {/* ── Unified Toolbar Row ── */}
+      <div class="flex flex-wrap items-center gap-2">
+        {/* Left: bulk actions */}
+        <button
+          onClick={() => { if (selectedEmployees().size > 0) openBulkAttendanceModal(); }}
+          disabled={selectedEmployees().size === 0}
+          class="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-all shadow-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Settings class="w-4 h-4" />
+          Set Attendance ({selectedEmployees().size})
+        </button>
+        <button
+          onClick={() => setSelectedEmployees(new Set())}
+          disabled={selectedEmployees().size === 0}
+          class="flex items-center gap-2 bg-gray-600 text-white px-4 py-2 rounded-xl hover:bg-gray-700 transition-all shadow-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <X class="w-4 h-4" />
+          Clear
+        </button>
+
+        {/* Spacer */}
+        <div class="flex-1" />
+
+        {/* Middle: department + status filters */}
+        <select
+          class="pl-3 pr-8 py-2 text-sm border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-[var(--color-text-primary)] font-medium"
+          value={filterDepartment()}
+          onChange={(e) => setFilterDepartment(e.currentTarget.value)}
+        >
+          <option value="all">All Departments</option>
+          <option value="Engineering">Engineering</option>
+          <option value="Marketing">Marketing</option>
+          <option value="Human Resources">Human Resources</option>
+          <option value="Finance">Finance</option>
+          <option value="Security Department">Security Department</option>
+          <option value="General">General</option>
+        </select>
+        <select
+          class="pl-3 pr-8 py-2 text-sm border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-[var(--color-text-primary)] font-medium"
+          value={filterStatus()}
+          onChange={(e) => setFilterStatus(e.currentTarget.value)}
+        >
+          <option value="all">All Status</option>
+          <option value="Active">Active</option>
+          <option value="On Leave">On Leave</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+
+        {/* Excel buttons */}
+        <div class="flex items-center bg-white p-1 rounded-xl border border-[var(--color-border)] shadow-sm">
+          <button
+            onClick={downloadTemplate}
+            class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-all border border-green-200"
+            title="Download Excel template"
+          >
+            <FileSpreadsheet class="w-4 h-4" />
+            Template
+          </button>
+          <div class="w-px h-4 bg-[var(--color-border)] mx-1" />
+          <button
+            onClick={() => setShowImportModal(true)}
+            class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all border border-blue-200"
+            title="Import from Excel"
+          >
+            <FileUp class="w-4 h-4" />
+            Import
+          </button>
+          <div class="w-px h-4 bg-[var(--color-border)] mx-1" />
+          <button
+            onClick={exportEmployees}
+            class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all border border-indigo-200"
+            title="Export to Excel"
+          >
+            <FileDown class="w-4 h-4" />
+            Export
+          </button>
         </div>
 
-        <div class="flex gap-2">
-          <div class="flex items-center bg-[var(--color-light-gray)]/30 p-1 rounded-xl border border-[var(--color-border)]">
-            <button
-              onClick={downloadTemplate}
-              class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[var(--color-text-secondary)] hover:text-green-600 hover:bg-white hover:shadow-sm rounded-lg transition-all"
-              title="Download Excel template"
-            >
-              <FileSpreadsheet class="w-4 h-4" />
-              Template
-            </button>
-            <div class="w-px h-4 bg-[var(--color-border)] mx-1"></div>
-            <button
-              onClick={() => setShowImportModal(true)}
-              class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[var(--color-text-secondary)] hover:text-blue-600 hover:bg-white hover:shadow-sm rounded-lg transition-all"
-              title="Import from Excel"
-            >
-              <FileUp class="w-4 h-4" />
-              Import
-            </button>
-            <div class="w-px h-4 bg-[var(--color-border)] mx-1"></div>
-            <button
-              onClick={exportEmployees}
-              class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[var(--color-text-secondary)] hover:text-indigo-600 hover:bg-white hover:shadow-sm rounded-lg transition-all"
-              title="Export to Excel"
-            >
-              <FileDown class="w-4 h-4" />
-              Export
-            </button>
+        {/* Refresh */}
+        <button
+          onClick={() => fetchEmployees(true)}
+          class="flex items-center gap-2 bg-white text-[var(--color-primary-button)] border border-[var(--color-border)] px-4 py-2 rounded-xl hover:bg-[var(--color-secondary-bg)] transition-all shadow-sm font-medium"
+          title="Force refresh"
+        >
+          <RefreshCw class={`w-4 h-4 ${isLoading() ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+
+        {/* Add Employee */}
+        <button
+          onClick={() => setShowAddModal(true)}
+          class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-all shadow-sm font-medium"
+        >
+          <Plus class="w-5 h-5" />
+          Add Employee
+        </button>
+
+        {/* Search — rightmost */}
+        <div class="relative">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search class="h-4 w-4 text-[var(--color-text-tertiary)]" />
           </div>
-          <button
-            onClick={() => fetchEmployees(true)}
-            class="flex items-center gap-2 bg-white text-[var(--color-primary-button)] border border-[var(--color-border)] px-4 py-2 rounded-xl hover:bg-[var(--color-secondary-bg)] transition-all shadow-sm font-medium"
-            title="Force refresh (bypass cache)"
-          >
-            <RefreshCw class={`w-4 h-4 ${isLoading() ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-[var(--color-primary-button)]/90 transition-all shadow-sm font-medium"
-          >
-            <Plus class="w-5 h-5" />
-            Add Employee
-          </button>
+          <input
+            type="text"
+            class="block w-64 pl-9 pr-3 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-[var(--color-light-gray)]/50 text-sm transition-all"
+            placeholder="Search name, NIK, dept..."
+            value={searchTerm()}
+            onInput={(e) => setSearchTerm(e.currentTarget.value)}
+          />
         </div>
       </div>
-
-      {/* Filters & Search */ }
-  <div class="bg-white p-4 rounded-2xl shadow-sm border border-[var(--color-border)] flex flex-col sm:flex-row gap-4 justify-between items-center">
-    <div class="relative w-full sm:w-96">
-      <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-        <Search class="h-5 w-5 text-[var(--color-text-tertiary)]" />
-      </div>
-      <input
-        type="text"
-        class="block w-full pl-10 pr-3 py-2.5 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-[var(--color-light-gray)]/50 text-sm transition-all"
-        placeholder="Search employees by name, NIK, or department..."
-        value={searchTerm()}
-        onInput={(e) => setSearchTerm(e.currentTarget.value)}
-      />
-    </div>
-    <div class="flex gap-2 w-full sm:w-auto">
-      <select
-        class="block w-full sm:w-auto pl-4 pr-10 py-2.5 text-sm border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-[var(--color-text-primary)] font-medium"
-        value={filterDepartment()}
-        onChange={(e) => setFilterDepartment(e.currentTarget.value)}
-      >
-        <option value="all">All Departments</option>
-        <option value="Engineering">Engineering</option>
-        <option value="Marketing">Marketing</option>
-        <option value="Human Resources">Human Resources</option>
-        <option value="Finance">Finance</option>
-        <option value="Security Department">Security Department</option>
-        <option value="General">General</option>
-      </select>
-      <select
-        class="block w-full sm:w-auto pl-4 pr-10 py-2.5 text-sm border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] bg-white text-[var(--color-text-primary)] font-medium"
-        value={filterStatus()}
-        onChange={(e) => setFilterStatus(e.currentTarget.value)}
-      >
-        <option value="all">All Status</option>
-        <option value="Active">Active</option>
-        <option value="On Leave">On Leave</option>
-        <option value="Inactive">Inactive</option>
-      </select>
-    </div>
-  </div>
 
   {/* Success Message */ }
   {
@@ -1747,7 +1805,7 @@ const EmployeeManagement: Component = () => {
           <button
             onClick={bulkUpdateAttendanceRequirements}
             disabled={isLoading()}
-            class="flex-1 px-4 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors font-medium disabled:opacity-50"
+            class="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-medium disabled:opacity-50"
           >
             {isLoading() ? "Applying..." : `Apply to ${selectedEmployees().size} Employees`}
           </button>
