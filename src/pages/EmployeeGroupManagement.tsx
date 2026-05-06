@@ -1,6 +1,10 @@
 import { type Component, For, createSignal, onMount, Show } from "solid-js";
 import { useParams, useNavigate } from "@solidjs/router";
-import { ArrowLeft, Users, RefreshCw, Shuffle, UserPlus, X, Calendar } from "lucide-solid";
+import { ArrowLeft, Users, RefreshCw, Shuffle, UserPlus, X, Calendar, Loader2, AlertCircle } from "lucide-solid";
+import { shiftTaskService } from "../services/shiftTaskService";
+import { employeeGroupService } from "../services/employeeGroupService";
+import { extractId } from "../types/shiftManagement";
+import { ApiError } from "../utils/apiClient";
 
 interface Employee {
     id: string;
@@ -26,6 +30,12 @@ interface DaySchedule {
     off: string;
 }
 
+interface ShiftSchedule {
+    shift_number: number;
+    start_time: string;
+    end_time: string;
+}
+
 interface ShiftTaskName {
     id: string;
     name: string;
@@ -33,7 +43,7 @@ interface ShiftTaskName {
     working_location: string;
     shift_type: string;
     number_of_groups: number;
-    schedules: any[];
+    schedules: ShiftSchedule[];
     created_at: string;
 }
 
@@ -46,75 +56,124 @@ const EmployeeGroupManagement: Component = () => {
     const [availableEmployees, setAvailableEmployees] = createSignal<Employee[]>([]);
     const [allEmployees, setAllEmployees] = createSignal<Employee[]>([]);
     const [isLoading, setIsLoading] = createSignal(false);
+    const [isLoadingTask, setIsLoadingTask] = createSignal(false);
+    const [error, setError] = createSignal<string | null>(null);
     const [schedulePreview, setSchedulePreview] = createSignal<DaySchedule[]>([]);
     const [showSchedulePreview, setShowSchedulePreview] = createSignal(false);
 
     const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080/api";
     const dayNames = ["SENIN", "SELASA", "RABU", "KAMIS", "JUM'AT", "SABTU", "MINGGU"];
 
-    // Fetch shift task data
-    const fetchShiftTask = () => {
-        console.log("Fetching shift task with ID:", params.id);
+    // Fetch shift task data from API
+    const fetchShiftTask = async () => {
+        setIsLoadingTask(true);
+        setError(null);
 
-        // Try to load from localStorage first
-        const saved = localStorage.getItem('shiftTaskNames');
-        let allTasks: ShiftTaskName[] = [];
+        try {
+            console.log("Fetching shift task with ID:", params.id);
+            const task = await shiftTaskService.getById(params.id);
+            console.log("Fetched shift task from API:", task);
 
-        if (saved) {
-            try {
-                allTasks = JSON.parse(saved);
-                console.log("Loaded from localStorage:", allTasks);
-            } catch (e) {
-                console.error('Failed to parse saved shift tasks:', e);
-            }
-        }
+            const mappedTask: ShiftTaskName = {
+                id: extractId(task.id),
+                name: task.name,
+                department: task.department,
+                working_location: task.working_location,
+                shift_type: task.shift_type,
+                number_of_groups: task.number_of_groups,
+                schedules: task.schedules,
+                created_at: task.created_at,
+            };
 
-        // Fallback to mock data if localStorage is empty
-        if (allTasks.length === 0) {
-            allTasks = [
-                {
-                    id: "1",
-                    name: "Security Head Office",
-                    department: "Security",
-                    working_location: "Head Office",
-                    shift_type: "3 Sesi",
-                    number_of_groups: 4,
-                    schedules: [],
-                    created_at: new Date().toISOString(),
-                },
-                {
-                    id: "2",
-                    name: "Security Factory Bekasi",
-                    department: "Security",
-                    working_location: "Factory Bekasi",
-                    shift_type: "3 Sesi",
-                    number_of_groups: 4,
-                    schedules: [],
-                    created_at: new Date().toISOString(),
-                },
-                {
-                    id: "3",
-                    name: "Security Factory Sukabumi",
-                    department: "Security",
-                    working_location: "Factory Sukabumi",
-                    shift_type: "3 Sesi",
-                    number_of_groups: 4,
-                    schedules: [],
-                    created_at: new Date().toISOString(),
-                },
-            ];
-        }
-
-        const task = allTasks.find(t => t.id === params.id);
-        console.log("Found shift task:", task);
-
-        if (task) {
-            setShiftTask(task);
+            setShiftTask(mappedTask);
             initializeGroups(task.number_of_groups);
-        } else {
-            console.error("Shift task not found for ID:", params.id);
+
+            // Try to load existing groups from API
+            await fetchExistingGroups(params.id);
+        } catch (err) {
+            const errorMessage = err instanceof ApiError ? err.message : "Failed to fetch shift task";
+            setError(errorMessage);
+            console.error("Error fetching shift task:", err);
             alert(`Shift task with ID ${params.id} not found. Please go back and try again.`);
+        } finally {
+            setIsLoadingTask(false);
         }
+    };
+
+    // Fetch existing employee groups from API
+    const fetchExistingGroups = async (shiftTaskId: string) => {
+        try {
+            const response = await employeeGroupService.getGroups(shiftTaskId);
+            console.log("Fetched existing groups:", response);
+
+            if (response.groups && response.groups.length > 0) {
+                // Wait for employees to be loaded first
+                // This will be called after fetchEmployees completes
+                // So we need to populate employees from employee_niks
+
+                // Store groups temporarily with employee_niks
+                const groupsWithNiks = response.groups.map(group => ({
+                    id: extractId(group.id),
+                    name: group.name,
+                    employee_niks: group.employee_niks || [],
+                    employees: [] as Employee[], // Will be populated after employees are loaded
+                }));
+
+                // Store for later population
+                (window as any).__pendingGroups = groupsWithNiks;
+
+                setGroups(groupsWithNiks.map(g => ({
+                    id: g.id,
+                    name: g.name,
+                    employees: [],
+                })));
+            }
+        } catch (err) {
+            console.log("No existing groups found or error fetching:", err);
+            // Not a critical error - groups might not exist yet
+        }
+    };
+
+    // Populate employees in groups after employees are loaded
+    const populateGroupEmployees = () => {
+        const pendingGroups = (window as any).__pendingGroups;
+        if (!pendingGroups || pendingGroups.length === 0) return;
+
+        const allEmps = allEmployees();
+        if (allEmps.length === 0) return;
+
+        console.log("Populating group employees...");
+        console.log("Pending groups:", pendingGroups);
+        console.log("All employees:", allEmps);
+
+        const populatedGroups = pendingGroups.map((group: any) => {
+            const employees = group.employee_niks
+                .map((nik: string) => allEmps.find(emp => emp.nik === nik))
+                .filter((emp: Employee | undefined): emp is Employee => emp !== undefined);
+
+            console.log(`Group ${group.name}: ${group.employee_niks.length} NIKs -> ${employees.length} employees`);
+
+            return {
+                id: group.id,
+                name: group.name,
+                employees: employees,
+            };
+        });
+
+        setGroups(populatedGroups);
+
+        // Update available employees (remove those already in groups)
+        const assignedNiks = new Set(
+            pendingGroups.flatMap((g: any) => g.employee_niks || [])
+        );
+        setAvailableEmployees(prev =>
+            prev.filter(emp => !assignedNiks.has(emp.nik))
+        );
+
+        // Clear pending groups
+        delete (window as any).__pendingGroups;
+
+        console.log("Groups populated successfully:", populatedGroups);
     };
 
     // Initialize groups based on number_of_groups
@@ -171,10 +230,16 @@ const EmployeeGroupManagement: Component = () => {
                     console.log(`Filter: ${filtered.length}/${mappedData.length} employees match dept "${task.department}"`);
                     setAllEmployees(filtered);
                     setAvailableEmployees(filtered);
+
+                    // Populate group employees after employees are loaded
+                    populateGroupEmployees();
                 } else {
                     // No task filter — show all employees
                     setAllEmployees(mappedData);
                     setAvailableEmployees(mappedData);
+
+                    // Populate group employees after employees are loaded
+                    populateGroupEmployees();
                 }
             } else {
                 console.log("API failed, using mock data");
@@ -203,9 +268,11 @@ const EmployeeGroupManagement: Component = () => {
                     });
                     setAllEmployees(filtered);
                     setAvailableEmployees(filtered);
+                    populateGroupEmployees();
                 } else {
                     setAllEmployees(mockEmployees);
                     setAvailableEmployees(mockEmployees);
+                    populateGroupEmployees();
                 }
             }
         } catch (err) {
@@ -233,9 +300,11 @@ const EmployeeGroupManagement: Component = () => {
                 });
                 setAllEmployees(filtered);
                 setAvailableEmployees(filtered);
+                populateGroupEmployees();
             } else {
                 setAllEmployees(mockEmployees);
                 setAvailableEmployees(mockEmployees);
+                populateGroupEmployees();
             }
         } finally {
             setIsLoading(false);
@@ -349,6 +418,10 @@ const EmployeeGroupManagement: Component = () => {
         const available = [...availableEmployees()];
         const numberOfGroups = groups().length;
 
+        console.log("=== GENERATE EMPLOYEE DISTRIBUTION ===");
+        console.log("Available employees:", available.length);
+        console.log("Number of groups:", numberOfGroups);
+
         if (available.length === 0) {
             alert("No available employees to distribute");
             return;
@@ -361,30 +434,78 @@ const EmployeeGroupManagement: Component = () => {
         const employeesPerGroup = Math.floor(shuffled.length / numberOfGroups);
         const remainder = shuffled.length % numberOfGroups;
 
+        console.log("Employees per group:", employeesPerGroup);
+        console.log("Remainder:", remainder);
+
         const newGroups = groups().map((group, index) => {
             const startIndex = index * employeesPerGroup + Math.min(index, remainder);
             const endIndex = startIndex + employeesPerGroup + (index < remainder ? 1 : 0);
+            const assignedEmployees = shuffled.slice(startIndex, endIndex);
+
+            console.log(`Group ${group.name}:`, {
+                startIndex,
+                endIndex,
+                employees: assignedEmployees.length,
+                niks: assignedEmployees.map(e => e.nik)
+            });
 
             return {
                 ...group,
-                employees: shuffled.slice(startIndex, endIndex),
+                employees: assignedEmployees,
             };
         });
 
         setGroups(newGroups);
         setAvailableEmployees([]); // All employees are now assigned
 
-        // Save to localStorage
-        saveGroupsToStorage(newGroups);
+        console.log("=== DISTRIBUTION COMPLETE ===");
+        console.log("New groups:", newGroups.map(g => ({
+            name: g.name,
+            employeeCount: g.employees.length,
+            niks: g.employees.map(e => e.nik)
+        })));
+
+        // Save to API
+        saveGroupsToAPI(newGroups);
 
         // Auto-generate schedule preview
         generateSchedulePreview(newGroups);
     };
 
-    // Save groups to localStorage
-    const saveGroupsToStorage = (groupsData: EmployeeGroup[]) => {
-        const taskId = params.id;
-        localStorage.setItem(`employeeGroups_${taskId}`, JSON.stringify(groupsData));
+    // Save groups to API
+    const saveGroupsToAPI = async (groupsData: EmployeeGroup[]) => {
+        try {
+            const saveDto = {
+                groups: groupsData.map(group => ({
+                    name: group.name,
+                    employee_niks: group.employees.map(emp => emp.nik),
+                })),
+            };
+
+            console.log("=== SAVING GROUPS TO API ===");
+            console.log("Request payload:", JSON.stringify(saveDto, null, 2));
+            console.log("Total groups:", saveDto.groups.length);
+            saveDto.groups.forEach((g, i) => {
+                console.log(`Group ${i + 1} (${g.name}): ${g.employee_niks.length} NIKs`, g.employee_niks);
+            });
+
+            const response = await employeeGroupService.saveGroups(params.id, saveDto);
+
+            console.log("=== API RESPONSE ===");
+            console.log("Response:", JSON.stringify(response, null, 2));
+            console.log("Groups returned:", response.length);
+            response.forEach((g, i) => {
+                console.log(`Group ${i + 1} (${g.name}):`, {
+                    employee_niks: g.employee_niks?.length || 0,
+                    employees: g.employees?.length || 0
+                });
+            });
+
+            console.log("Groups saved to API successfully");
+        } catch (err) {
+            console.error("Error saving groups to API:", err);
+            alert("Failed to save groups. Please try again.");
+        }
     };
 
     // Reset all groups
@@ -414,8 +535,8 @@ const EmployeeGroupManagement: Component = () => {
         setGroups(newGroups);
         setAvailableEmployees(prev => prev.filter(emp => emp.id !== employee.id));
 
-        // Save to localStorage
-        saveGroupsToStorage(newGroups);
+        // Save to API
+        saveGroupsToAPI(newGroups);
     };
 
     // Remove employee from group
@@ -442,8 +563,8 @@ const EmployeeGroupManagement: Component = () => {
             setAvailableEmployees(prev => [...prev, removedEmployee!]);
         }
 
-        // Save to localStorage
-        saveGroupsToStorage(newGroups);
+        // Save to API
+        saveGroupsToAPI(newGroups);
     };
 
     // Drag and drop handlers
@@ -465,11 +586,9 @@ const EmployeeGroupManagement: Component = () => {
         setDraggedEmployee(null);
     };
 
-    onMount(() => {
-        fetchShiftTask();
-        // fetchShiftTask is synchronous (reads localStorage), so shiftTask() is
-        // already set by the time fetchEmployees runs
-        fetchEmployees();
+    onMount(async () => {
+        await fetchShiftTask();
+        await fetchEmployees();
     });
 
     const getTotalAssigned = () => {
@@ -498,262 +617,288 @@ const EmployeeGroupManagement: Component = () => {
                 </div>
             </div>
 
+            {/* Loading State */}
+            <Show when={isLoadingTask()}>
+                <div class="flex flex-col items-center justify-center py-12">
+                    <Loader2 class="w-8 h-8 text-[var(--color-primary-button)] animate-spin mb-2" />
+                    <p class="text-sm text-[var(--color-text-secondary)]">Loading shift task...</p>
+                </div>
+            </Show>
+
+            {/* Error Message */}
+            <Show when={error()}>
+                <div class="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+                    <AlertCircle class="w-5 h-5 text-red-600" />
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-red-800">{error()}</p>
+                    </div>
+                    <button
+                        onClick={fetchShiftTask}
+                        class="text-sm text-red-600 hover:text-red-700 font-medium"
+                    >
+                        Retry
+                    </button>
+                </div>
+            </Show>
+
             {/* Stats and Actions */}
-            <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-6">
-                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                    <div class="flex gap-6">
-                        <div>
-                            <p class="text-sm text-[var(--color-text-secondary)]">Total Groups</p>
-                            <p class="text-2xl font-bold text-[var(--color-text-primary)]">{groups().length}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-[var(--color-text-secondary)]">Total Employees</p>
-                            <p class="text-2xl font-bold text-[var(--color-text-primary)]">{allEmployees().length}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-[var(--color-text-secondary)]">Assigned</p>
-                            <p class="text-2xl font-bold text-green-600">{getTotalAssigned()}</p>
-                        </div>
-                        <div>
-                            <p class="text-sm text-[var(--color-text-secondary)]">Available</p>
-                            <p class="text-2xl font-bold text-blue-600">{availableEmployees().length}</p>
-                        </div>
-                    </div>
-
-                    <div class="flex gap-2">
-                        <button
-                            onClick={resetGroups}
-                            class="flex items-center gap-2 px-4 py-2 border border-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl hover:bg-[var(--color-light-gray)] transition-all"
-                        >
-                            <RefreshCw class="w-4 h-4" />
-                            Reset Groups
-                        </button>
-                        <button
-                            onClick={generateEmployeeDistribution}
-                            disabled={availableEmployees().length === 0}
-                            class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            <Shuffle class="w-4 h-4" />
-                            Generate Groups & Schedule
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Groups and Available Employees */}
-            <div class="grid lg:grid-cols-3 gap-6">
-                {/* Groups Column (2/3 width) */}
-                <div class="lg:col-span-2 space-y-4">
-                    <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Groups</h3>
-                    <div class="space-y-4">
-                        <For each={groups()}>
-                            {(group) => (
-                                <div
-                                    class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-4"
-                                    onDragOver={handleDragOver}
-                                    onDrop={() => handleDrop(group.id)}
-                                >
-                                    <div class="flex items-center justify-between mb-3">
-                                        <div class="flex items-center gap-2">
-                                            <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                                <span class="text-blue-700 font-bold text-lg">{group.name.split(" ")[1]}</span>
-                                            </div>
-                                            <div>
-                                                <h4 class="font-semibold text-[var(--color-text-primary)]">{group.name}</h4>
-                                                <p class="text-xs text-[var(--color-text-secondary)]">
-                                                    {group.employees.length} members
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="space-y-2 min-h-[150px] max-h-[300px] overflow-y-auto">
-                                        <Show when={group.employees.length === 0}>
-                                            <div class="flex items-center justify-center h-[150px] border-2 border-dashed border-[var(--color-border)] rounded-xl">
-                                                <p class="text-sm text-[var(--color-text-secondary)]">
-                                                    Drop employees here or click Generate
-                                                </p>
-                                            </div>
-                                        </Show>
-                                        <For each={group.employees}>
-                                            {(employee) => (
-                                                <div class="flex items-center justify-between bg-[var(--color-light-gray)] p-3 rounded-lg hover:bg-gray-100 transition-colors">
-                                                    <div class="flex-1">
-                                                        <p class="font-medium text-sm text-[var(--color-text-primary)]">
-                                                            {employee.full_name}
-                                                        </p>
-                                                        <p class="text-xs text-[var(--color-text-secondary)]">
-                                                            NIK: {employee.nik}
-                                                        </p>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => removeEmployeeFromGroup(group.id, employee.id)}
-                                                        class="text-red-600 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors"
-                                                        title="Remove from group"
-                                                    >
-                                                        <X class="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </For>
-                                    </div>
-                                </div>
-                            )}
-                        </For>
-                    </div>
-                </div>
-
-                {/* Available Employees Column (1/3 width) */}
-                <div class="space-y-4">
-                    <div class="flex items-center justify-between">
-                        <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">
-                            Available Employees
-                        </h3>
-                        <span class="text-sm text-[var(--color-text-secondary)]">
-                            {availableEmployees().length} available
-                        </span>
-                    </div>
-
-                    <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-4">
-                        <div class="space-y-2 max-h-[600px] overflow-y-auto">
-                            <Show when={isLoading()}>
-                                <div class="flex flex-col items-center justify-center py-12 text-center">
-                                    <RefreshCw class="w-12 h-12 text-[var(--color-text-secondary)] mb-2 animate-spin" />
-                                    <p class="text-sm text-[var(--color-text-secondary)]">
-                                        Loading employees...
-                                    </p>
-                                </div>
-                            </Show>
-                            <Show when={!isLoading() && availableEmployees().length === 0}>
-                                <div class="flex flex-col items-center justify-center py-12 text-center">
-                                    <Users class="w-12 h-12 text-[var(--color-text-secondary)] mb-2" />
-                                    <p class="text-sm text-[var(--color-text-secondary)]">
-                                        All employees have been assigned to groups
-                                    </p>
-                                    <p class="text-xs text-[var(--color-text-secondary)] mt-2">
-                                        Total in system: {allEmployees().length}
-                                    </p>
-                                </div>
-                            </Show>
-                            <Show when={!isLoading() && availableEmployees().length > 0}>
-                                <For each={availableEmployees()}>
-                                    {(employee) => (
-                                        <div
-                                            class="flex items-center justify-between bg-[var(--color-light-gray)] p-3 rounded-lg cursor-move hover:shadow-sm transition-all"
-                                            draggable={true}
-                                            onDragStart={() => handleDragStart(employee)}
-                                        >
-                                            <div class="flex-1">
-                                                <p class="font-medium text-sm text-[var(--color-text-primary)]">
-                                                    {employee.full_name}
-                                                </p>
-                                                <p class="text-xs text-[var(--color-text-secondary)]">
-                                                    NIK: {employee.nik} • {employee.department}
-                                                </p>
-                                            </div>
-                                            <UserPlus class="w-4 h-4 text-[var(--color-text-secondary)]" />
-                                        </div>
-                                    )}
-                                </For>
-                            </Show>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Schedule Preview Section */}
-            <Show when={showSchedulePreview()}>
-                <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] overflow-hidden">
-                    <div class="p-6 border-b border-[var(--color-border)]">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <Calendar class="w-5 h-5 text-[var(--color-text-secondary)]" />
-                                <div>
-                                    <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">
-                                        Schedule Preview - Week 1
-                                    </h3>
-                                    <p class="text-sm text-[var(--color-text-secondary)]">
-                                        Preview of the first week schedule
-                                    </p>
-                                </div>
+            <Show when={!isLoadingTask() && !error()}>
+                <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-6">
+                    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                        <div class="flex gap-6">
+                            <div>
+                                <p class="text-sm text-[var(--color-text-secondary)]">Total Groups</p>
+                                <p class="text-2xl font-bold text-[var(--color-text-primary)]">{groups().length}</p>
                             </div>
+                            <div>
+                                <p class="text-sm text-[var(--color-text-secondary)]">Total Employees</p>
+                                <p class="text-2xl font-bold text-[var(--color-text-primary)]">{allEmployees().length}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-[var(--color-text-secondary)]">Assigned</p>
+                                <p class="text-2xl font-bold text-green-600">{getTotalAssigned()}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-[var(--color-text-secondary)]">Available</p>
+                                <p class="text-2xl font-bold text-blue-600">{availableEmployees().length}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-2">
                             <button
-                                onClick={() => navigate(`/shift-management/${params.id}/schedule`)}
-                                class="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-all shadow-sm font-medium"
+                                onClick={resetGroups}
+                                class="flex items-center gap-2 px-4 py-2 border border-[var(--color-border)] text-[var(--color-text-secondary)] rounded-xl hover:bg-[var(--color-light-gray)] transition-all"
                             >
-                                <Calendar class="w-4 h-4" />
-                                View Full Schedule (4 Weeks)
+                                <RefreshCw class="w-4 h-4" />
+                                Reset Groups
+                            </button>
+                            <button
+                                onClick={generateEmployeeDistribution}
+                                disabled={availableEmployees().length === 0}
+                                class="flex items-center gap-2 bg-[var(--color-primary-button)] text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Shuffle class="w-4 h-4" />
+                                Generate Groups & Schedule
                             </button>
                         </div>
                     </div>
+                </div>
 
-                    <div class="overflow-x-auto">
-                        <table class="w-full">
-                            <thead class="bg-[var(--color-light-gray)]">
-                                <tr>
-                                    <th class="text-left p-4 font-medium text-[var(--color-text-primary)] w-32">Day</th>
-                                    <th class="text-center p-4 font-medium text-[var(--color-text-primary)] bg-green-50">
-                                        <div>SHIFT-1</div>
-                                        <div class="text-xs font-normal text-[var(--color-text-secondary)]">
-                                            {shiftTask()?.schedules[0]?.start_time} - {shiftTask()?.schedules[0]?.end_time}
-                                        </div>
-                                    </th>
-                                    <th class="text-center p-4 font-medium text-[var(--color-text-primary)] bg-green-50">
-                                        <div>SHIFT-2</div>
-                                        <div class="text-xs font-normal text-[var(--color-text-secondary)]">
-                                            {shiftTask()?.schedules[1]?.start_time} - {shiftTask()?.schedules[1]?.end_time}
-                                        </div>
-                                    </th>
-                                    <Show when={shiftTask()?.shift_type === "3 Sesi"}>
-                                        <th class="text-center p-4 font-medium text-[var(--color-text-primary)] bg-green-50">
-                                            <div>SHIFT-3</div>
-                                            <div class="text-xs font-normal text-[var(--color-text-secondary)]">
-                                                {shiftTask()?.schedules[2]?.start_time} - {shiftTask()?.schedules[2]?.end_time}
-                                            </div>
-                                        </th>
-                                    </Show>
-                                    <th class="text-center p-4 font-medium text-[var(--color-text-primary)] bg-yellow-50">
-                                        LIBUR (OFF)
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <For each={schedulePreview()}>
-                                    {(day) => (
-                                        <tr class="border-b border-[var(--color-border)] hover:bg-[var(--color-light-gray)] transition-colors">
-                                            <td class="p-4">
-                                                <div class="font-medium text-[var(--color-text-primary)]">{day.dayName}</div>
-                                                <div class="text-xs text-[var(--color-text-secondary)]">
-                                                    {new Date(day.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                {/* Groups and Available Employees */}
+                <div class="grid lg:grid-cols-3 gap-6">
+                    {/* Groups Column (2/3 width) */}
+                    <div class="lg:col-span-2 space-y-4">
+                        <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">Groups</h3>
+                        <div class="space-y-4">
+                            <For each={groups()}>
+                                {(group) => (
+                                    <div
+                                        class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-4"
+                                        onDragOver={handleDragOver}
+                                        onDrop={() => handleDrop(group.id)}
+                                    >
+                                        <div class="flex items-center justify-between mb-3">
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                                    <span class="text-blue-700 font-bold text-lg">{group.name.split(" ")[1]}</span>
                                                 </div>
-                                            </td>
-                                            <td class="p-4 text-center bg-green-50">
-                                                <span class="font-medium text-[var(--color-text-primary)]">{day.shift1}</span>
-                                            </td>
-                                            <td class="p-4 text-center bg-green-50">
-                                                <span class="font-medium text-[var(--color-text-primary)]">{day.shift2}</span>
-                                            </td>
-                                            <Show when={shiftTask()?.shift_type === "3 Sesi"}>
-                                                <td class="p-4 text-center bg-green-50">
-                                                    <span class="font-medium text-[var(--color-text-primary)]">{day.shift3}</span>
-                                                </td>
+                                                <div>
+                                                    <h4 class="font-semibold text-[var(--color-text-primary)]">{group.name}</h4>
+                                                    <p class="text-xs text-[var(--color-text-secondary)]">
+                                                        {group.employees.length} members
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="space-y-2 min-h-[150px] max-h-[300px] overflow-y-auto">
+                                            <Show when={group.employees.length === 0}>
+                                                <div class="flex items-center justify-center h-[150px] border-2 border-dashed border-[var(--color-border)] rounded-xl">
+                                                    <p class="text-sm text-[var(--color-text-secondary)]">
+                                                        Drop employees here or click Generate
+                                                    </p>
+                                                </div>
                                             </Show>
-                                            <td class="p-4 text-center bg-yellow-50">
-                                                <span class="font-medium text-[var(--color-text-primary)]">{day.off}</span>
-                                            </td>
-                                        </tr>
-                                    )}
-                                </For>
-                            </tbody>
-                        </table>
+                                            <For each={group.employees}>
+                                                {(employee) => (
+                                                    <div class="flex items-center justify-between bg-[var(--color-light-gray)] p-3 rounded-lg hover:bg-gray-100 transition-colors">
+                                                        <div class="flex-1">
+                                                            <p class="font-medium text-sm text-[var(--color-text-primary)]">
+                                                                {employee.full_name}
+                                                            </p>
+                                                            <p class="text-xs text-[var(--color-text-secondary)]">
+                                                                NIK: {employee.nik}
+                                                            </p>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => removeEmployeeFromGroup(group.id, employee.id)}
+                                                            class="text-red-600 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors"
+                                                            title="Remove from group"
+                                                        >
+                                                            <X class="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </For>
+                                        </div>
+                                    </div>
+                                )}
+                            </For>
+                        </div>
                     </div>
 
-                    <div class="p-4 bg-blue-50 border-t border-blue-200">
-                        <p class="text-sm text-blue-800">
-                            💡 <strong>Tip:</strong> This is a preview of the first week. Click "View Full Schedule" to see all 4 weeks and make edits.
-                        </p>
+                    {/* Available Employees Column (1/3 width) */}
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">
+                                Available Employees
+                            </h3>
+                            <span class="text-sm text-[var(--color-text-secondary)]">
+                                {availableEmployees().length} available
+                            </span>
+                        </div>
+
+                        <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] p-4">
+                            <div class="space-y-2 max-h-[600px] overflow-y-auto">
+                                <Show when={isLoading()}>
+                                    <div class="flex flex-col items-center justify-center py-12 text-center">
+                                        <RefreshCw class="w-12 h-12 text-[var(--color-text-secondary)] mb-2 animate-spin" />
+                                        <p class="text-sm text-[var(--color-text-secondary)]">
+                                            Loading employees...
+                                        </p>
+                                    </div>
+                                </Show>
+                                <Show when={!isLoading() && availableEmployees().length === 0}>
+                                    <div class="flex flex-col items-center justify-center py-12 text-center">
+                                        <Users class="w-12 h-12 text-[var(--color-text-secondary)] mb-2" />
+                                        <p class="text-sm text-[var(--color-text-secondary)]">
+                                            All employees have been assigned to groups
+                                        </p>
+                                        <p class="text-xs text-[var(--color-text-secondary)] mt-2">
+                                            Total in system: {allEmployees().length}
+                                        </p>
+                                    </div>
+                                </Show>
+                                <Show when={!isLoading() && availableEmployees().length > 0}>
+                                    <For each={availableEmployees()}>
+                                        {(employee) => (
+                                            <div
+                                                class="flex items-center justify-between bg-[var(--color-light-gray)] p-3 rounded-lg cursor-move hover:shadow-sm transition-all"
+                                                draggable={true}
+                                                onDragStart={() => handleDragStart(employee)}
+                                            >
+                                                <div class="flex-1">
+                                                    <p class="font-medium text-sm text-[var(--color-text-primary)]">
+                                                        {employee.full_name}
+                                                    </p>
+                                                    <p class="text-xs text-[var(--color-text-secondary)]">
+                                                        NIK: {employee.nik} • {employee.department}
+                                                    </p>
+                                                </div>
+                                                <UserPlus class="w-4 h-4 text-[var(--color-text-secondary)]" />
+                                            </div>
+                                        )}
+                                    </For>
+                                </Show>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
+                {/* Schedule Preview Section */}
+                <Show when={showSchedulePreview()}>
+                    <div class="bg-white rounded-2xl shadow-sm border border-[var(--color-border)] overflow-hidden">
+                        <div class="p-6 border-b border-[var(--color-border)]">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <Calendar class="w-5 h-5 text-[var(--color-text-secondary)]" />
+                                    <div>
+                                        <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">
+                                            Schedule Preview - Week 1
+                                        </h3>
+                                        <p class="text-sm text-[var(--color-text-secondary)]">
+                                            Preview of the first week schedule
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => navigate(`/shift-management/${params.id}/schedule`)}
+                                    class="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-all shadow-sm font-medium"
+                                >
+                                    <Calendar class="w-4 h-4" />
+                                    View Full Schedule (4 Weeks)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-[var(--color-light-gray)]">
+                                    <tr>
+                                        <th class="text-left p-4 font-medium text-[var(--color-text-primary)] w-32">Day</th>
+                                        <th class="text-center p-4 font-medium text-[var(--color-text-primary)] bg-green-50">
+                                            <div>SHIFT-1</div>
+                                            <div class="text-xs font-normal text-[var(--color-text-secondary)]">
+                                                {shiftTask()?.schedules[0]?.start_time} - {shiftTask()?.schedules[0]?.end_time}
+                                            </div>
+                                        </th>
+                                        <th class="text-center p-4 font-medium text-[var(--color-text-primary)] bg-green-50">
+                                            <div>SHIFT-2</div>
+                                            <div class="text-xs font-normal text-[var(--color-text-secondary)]">
+                                                {shiftTask()?.schedules[1]?.start_time} - {shiftTask()?.schedules[1]?.end_time}
+                                            </div>
+                                        </th>
+                                        <Show when={shiftTask()?.shift_type === "3 Sesi"}>
+                                            <th class="text-center p-4 font-medium text-[var(--color-text-primary)] bg-green-50">
+                                                <div>SHIFT-3</div>
+                                                <div class="text-xs font-normal text-[var(--color-text-secondary)]">
+                                                    {shiftTask()?.schedules[2]?.start_time} - {shiftTask()?.schedules[2]?.end_time}
+                                                </div>
+                                            </th>
+                                        </Show>
+                                        <th class="text-center p-4 font-medium text-[var(--color-text-primary)] bg-yellow-50">
+                                            LIBUR (OFF)
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <For each={schedulePreview()}>
+                                        {(day) => (
+                                            <tr class="border-b border-[var(--color-border)] hover:bg-[var(--color-light-gray)] transition-colors">
+                                                <td class="p-4">
+                                                    <div class="font-medium text-[var(--color-text-primary)]">{day.dayName}</div>
+                                                    <div class="text-xs text-[var(--color-text-secondary)]">
+                                                        {new Date(day.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                                                    </div>
+                                                </td>
+                                                <td class="p-4 text-center bg-green-50">
+                                                    <span class="font-medium text-[var(--color-text-primary)]">{day.shift1}</span>
+                                                </td>
+                                                <td class="p-4 text-center bg-green-50">
+                                                    <span class="font-medium text-[var(--color-text-primary)]">{day.shift2}</span>
+                                                </td>
+                                                <Show when={shiftTask()?.shift_type === "3 Sesi"}>
+                                                    <td class="p-4 text-center bg-green-50">
+                                                        <span class="font-medium text-[var(--color-text-primary)]">{day.shift3}</span>
+                                                    </td>
+                                                </Show>
+                                                <td class="p-4 text-center bg-yellow-50">
+                                                    <span class="font-medium text-[var(--color-text-primary)]">{day.off}</span>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </For>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="p-4 bg-blue-50 border-t border-blue-200">
+                            <p class="text-sm text-blue-800">
+                                💡 <strong>Tip:</strong> This is a preview of the first week. Click "View Full Schedule" to see all 4 weeks and make edits.
+                            </p>
+                        </div>
+                    </div>
+                </Show>
             </Show>
         </div>
     );

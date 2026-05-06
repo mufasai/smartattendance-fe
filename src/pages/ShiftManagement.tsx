@@ -1,81 +1,27 @@
 import { type Component, For, createSignal, Show, onMount } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { Plus, Trash2, Edit, MapPin, Users, Building2 } from "lucide-solid";
-
-interface ShiftSchedule {
-    shift_number: number;
-    start_time: string;
-    end_time: string;
-}
-
-interface ShiftTaskName {
-    id: string;
-    name: string;
-    department: string;
-    working_location: string;
-    shift_type: string; // "2 Sesi" or "3 Sesi"
-    number_of_groups: number;
-    schedules: ShiftSchedule[];
-    created_at: string;
-}
+import { Plus, Trash2, Edit, MapPin, Users, Building2, Loader2, AlertCircle } from "lucide-solid";
+import { shiftTaskService } from "../services/shiftTaskService";
+import type { ShiftTask, CreateShiftTaskDto, UpdateShiftTaskDto } from "../types/shiftManagement";
+import { extractId } from "../types/shiftManagement";
+import { ApiError } from "../utils/apiClient";
 
 const ShiftManagement: Component = () => {
     const navigate = useNavigate();
 
-    const [shiftTaskNames, setShiftTaskNames] = createSignal<ShiftTaskName[]>([
-        {
-            id: "1",
-            name: "Security Head Office",
-            department: "Security",
-            working_location: "Head Office",
-            shift_type: "3 Sesi",
-            number_of_groups: 4,
-            schedules: [
-                { shift_number: 1, start_time: "07:00", end_time: "15:00" },
-                { shift_number: 2, start_time: "15:00", end_time: "23:00" },
-                { shift_number: 3, start_time: "23:00", end_time: "07:00" },
-            ],
-            created_at: new Date().toISOString(),
-        },
-        {
-            id: "2",
-            name: "Security Factory Bekasi",
-            department: "Security",
-            working_location: "Factory Bekasi",
-            shift_type: "3 Sesi",
-            number_of_groups: 4,
-            schedules: [
-                { shift_number: 1, start_time: "07:00", end_time: "15:00" },
-                { shift_number: 2, start_time: "15:00", end_time: "23:00" },
-                { shift_number: 3, start_time: "23:00", end_time: "07:00" },
-            ],
-            created_at: new Date().toISOString(),
-        },
-        {
-            id: "3",
-            name: "Security Factory Sukabumi",
-            department: "Security",
-            working_location: "Factory Sukabumi",
-            shift_type: "3 Sesi",
-            number_of_groups: 4,
-            schedules: [
-                { shift_number: 1, start_time: "07:00", end_time: "15:00" },
-                { shift_number: 2, start_time: "15:00", end_time: "23:00" },
-                { shift_number: 3, start_time: "23:00", end_time: "07:00" },
-            ],
-            created_at: new Date().toISOString(),
-        },
-    ]);
-
+    const [shiftTaskNames, setShiftTaskNames] = createSignal<ShiftTask[]>([]);
+    const [isLoading, setIsLoading] = createSignal(false);
+    const [error, setError] = createSignal<string | null>(null);
     const [showCreateModal, setShowCreateModal] = createSignal(false);
     const [showEditModal, setShowEditModal] = createSignal(false);
-    const [editingTask, setEditingTask] = createSignal<ShiftTaskName | null>(null);
+    const [editingTask, setEditingTask] = createSignal<ShiftTask | null>(null);
+    const [isSaving, setIsSaving] = createSignal(false);
 
     const [formData, setFormData] = createSignal({
         name: "",
         department: "",
         working_location: "",
-        shift_type: "3 Sesi",
+        shift_type: "3 Sesi" as "2 Sesi" | "3 Sesi",
         number_of_groups: 4,
         schedules: [
             { shift_number: 1, start_time: "07:00", end_time: "15:00" },
@@ -84,22 +30,28 @@ const ShiftManagement: Component = () => {
         ],
     });
 
-    // Load from localStorage on mount
-    onMount(() => {
-        const saved = localStorage.getItem('shiftTaskNames');
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    setShiftTaskNames(parsed);
-                }
-            } catch (e) {
-                console.error('Failed to parse saved shift tasks:', e);
-            }
+    // Fetch shift tasks from API
+    const fetchShiftTasks = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const tasks = await shiftTaskService.getAll();
+            setShiftTaskNames(tasks);
+        } catch (err) {
+            const errorMessage = err instanceof ApiError ? err.message : "Failed to fetch shift tasks";
+            setError(errorMessage);
+            console.error("Error fetching shift tasks:", err);
+        } finally {
+            setIsLoading(false);
         }
+    };
+
+    // Load data on mount
+    onMount(() => {
+        fetchShiftTasks();
     });
 
-    const updateShiftType = (type: string) => {
+    const updateShiftType = (type: "2 Sesi" | "3 Sesi") => {
         if (type === "2 Sesi") {
             setFormData(prev => ({
                 ...prev,
@@ -131,35 +83,39 @@ const ShiftManagement: Component = () => {
         }));
     };
 
-    const createShiftTaskName = () => {
+    const createShiftTaskName = async () => {
         const data = formData();
         if (!data.name || !data.department || !data.working_location) {
             alert("Please fill all required fields");
             return;
         }
 
-        const newTask: ShiftTaskName = {
-            id: Date.now().toString(),
-            name: data.name,
-            department: data.department,
-            working_location: data.working_location,
-            shift_type: data.shift_type,
-            number_of_groups: data.number_of_groups,
-            schedules: data.schedules,
-            created_at: new Date().toISOString(),
-        };
+        setIsSaving(true);
+        try {
+            const createDto: CreateShiftTaskDto = {
+                name: data.name,
+                department: data.department,
+                working_location: data.working_location,
+                shift_type: data.shift_type,
+                number_of_groups: data.number_of_groups,
+                schedules: data.schedules,
+            };
 
-        const updatedTasks = [...shiftTaskNames(), newTask];
-        setShiftTaskNames(updatedTasks);
-
-        // Save to localStorage for persistence
-        localStorage.setItem('shiftTaskNames', JSON.stringify(updatedTasks));
-
-        setShowCreateModal(false);
-        resetForm();
+            const newTask = await shiftTaskService.create(createDto);
+            setShiftTaskNames(prev => [...prev, newTask]);
+            setShowCreateModal(false);
+            resetForm();
+            alert("Shift task created successfully!");
+        } catch (err) {
+            const errorMessage = err instanceof ApiError ? err.message : "Failed to create shift task";
+            alert(errorMessage);
+            console.error("Error creating shift task:", err);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    const startEdit = (task: ShiftTaskName) => {
+    const startEdit = (task: ShiftTask) => {
         setEditingTask(task);
         setFormData({
             name: task.name,
@@ -172,39 +128,51 @@ const ShiftManagement: Component = () => {
         setShowEditModal(true);
     };
 
-    const updateShiftTaskName = () => {
+    const updateShiftTaskName = async () => {
         const data = formData();
         const editing = editingTask();
         if (!editing) return;
 
-        const updatedTask: ShiftTaskName = {
-            ...editing,
-            name: data.name,
-            department: data.department,
-            working_location: data.working_location,
-            shift_type: data.shift_type,
-            number_of_groups: data.number_of_groups,
-            schedules: data.schedules,
-        };
+        setIsSaving(true);
+        try {
+            const updateDto: UpdateShiftTaskDto = {
+                name: data.name,
+                department: data.department,
+                working_location: data.working_location,
+                shift_type: data.shift_type,
+                number_of_groups: data.number_of_groups,
+                schedules: data.schedules,
+            };
 
-        const updatedTasks = shiftTaskNames().map(task => task.id === editing.id ? updatedTask : task);
-        setShiftTaskNames(updatedTasks);
-
-        // Save to localStorage for persistence
-        localStorage.setItem('shiftTaskNames', JSON.stringify(updatedTasks));
-
-        setShowEditModal(false);
-        setEditingTask(null);
-        resetForm();
+            const idStr = extractId(editing.id);
+            const updatedTask = await shiftTaskService.update(idStr, updateDto);
+            setShiftTaskNames(prev => prev.map(task => extractId(task.id) === idStr ? updatedTask : task));
+            setShowEditModal(false);
+            setEditingTask(null);
+            resetForm();
+            alert("Shift task updated successfully!");
+        } catch (err) {
+            const errorMessage = err instanceof ApiError ? err.message : "Failed to update shift task";
+            alert(errorMessage);
+            console.error("Error updating shift task:", err);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    const deleteShiftTaskName = (id: string) => {
-        if (confirm("Are you sure you want to delete this shift task?")) {
-            const updatedTasks = shiftTaskNames().filter(task => task.id !== id);
-            setShiftTaskNames(updatedTasks);
+    const deleteShiftTaskName = async (id: string) => {
+        if (!confirm("Are you sure you want to delete this shift task?")) {
+            return;
+        }
 
-            // Save to localStorage for persistence
-            localStorage.setItem('shiftTaskNames', JSON.stringify(updatedTasks));
+        try {
+            await shiftTaskService.delete(id);
+            setShiftTaskNames(prev => prev.filter(task => task.id !== id));
+            alert("Shift task deleted successfully!");
+        } catch (err) {
+            const errorMessage = err instanceof ApiError ? err.message : "Failed to delete shift task";
+            alert(errorMessage);
+            console.error("Error deleting shift task:", err);
         }
     };
 
@@ -252,93 +220,120 @@ const ShiftManagement: Component = () => {
                     </h3>
                 </div>
 
-                <div class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead class="bg-[var(--color-light-gray)]">
-                            <tr>
-                                <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Shift Task Name</th>
-                                <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Department</th>
-                                <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Working Location</th>
-                                <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Shift Type</th>
-                                <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Number of Group</th>
-                                <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <Show when={shiftTaskNames().length === 0}>
+                {/* Error Message */}
+                <Show when={error()}>
+                    <div class="p-4 m-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+                        <AlertCircle class="w-5 h-5 text-red-600" />
+                        <div class="flex-1">
+                            <p class="text-sm font-medium text-red-800">{error()}</p>
+                        </div>
+                        <button
+                            onClick={fetchShiftTasks}
+                            class="text-sm text-red-600 hover:text-red-700 font-medium"
+                        >
+                            Retry
+                        </button>
+                    </div>
+                </Show>
+
+                {/* Loading State */}
+                <Show when={isLoading()}>
+                    <div class="flex flex-col items-center justify-center py-12">
+                        <Loader2 class="w-8 h-8 text-[var(--color-primary-button)] animate-spin mb-2" />
+                        <p class="text-sm text-[var(--color-text-secondary)]">Loading shift tasks...</p>
+                    </div>
+                </Show>
+
+                {/* Table */}
+                <Show when={!isLoading()}>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-[var(--color-light-gray)]">
                                 <tr>
-                                    <td colspan="6" class="text-center p-8 text-[var(--color-text-secondary)]">
-                                        No shift task names found. Click "Add Shift Task Name" to create one.
-                                    </td>
+                                    <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Shift Task Name</th>
+                                    <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Department</th>
+                                    <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Working Location</th>
+                                    <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Shift Type</th>
+                                    <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Number of Group</th>
+                                    <th class="text-left p-4 font-medium text-[var(--color-text-primary)]">Actions</th>
                                 </tr>
-                            </Show>
-                            <For each={shiftTaskNames()}>
-                                {(task) => (
-                                    <tr class="border-b border-[var(--color-border)] hover:bg-[var(--color-light-gray)] transition-colors">
-                                        <td class="p-4">
-                                            <div class="font-medium text-[var(--color-text-primary)]">{task.name}</div>
-                                            <div class="text-xs text-[var(--color-text-secondary)] mt-1">
-                                                <For each={task.schedules}>
-                                                    {(schedule) => (
-                                                        <div>Shift-{schedule.shift_number}: {schedule.start_time} - {schedule.end_time}</div>
-                                                    )}
-                                                </For>
-                                            </div>
-                                        </td>
-                                        <td class="p-4">
-                                            <div class="flex items-center gap-2">
-                                                <Building2 class="w-4 h-4 text-[var(--color-text-secondary)]" />
-                                                <span class="text-[var(--color-text-primary)]">{task.department}</span>
-                                            </div>
-                                        </td>
-                                        <td class="p-4">
-                                            <div class="flex items-center gap-2">
-                                                <MapPin class="w-4 h-4 text-[var(--color-text-secondary)]" />
-                                                <span class="text-[var(--color-text-primary)]">{task.working_location}</span>
-                                            </div>
-                                        </td>
-                                        <td class="p-4">
-                                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
-                                                {task.shift_type}
-                                            </span>
-                                        </td>
-                                        <td class="p-4">
-                                            <div class="flex items-center gap-2">
-                                                <Users class="w-4 h-4 text-[var(--color-text-secondary)]" />
-                                                <span class="font-semibold text-[var(--color-text-primary)]">{task.number_of_groups} Group</span>
-                                            </div>
-                                        </td>
-                                        <td class="p-4">
-                                            <div class="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => navigate(`/shift-management/${task.id}/groups`)}
-                                                    class="text-green-600 hover:text-green-700 p-2 rounded-lg hover:bg-green-50 transition-colors"
-                                                    title="Manage Employee Groups"
-                                                >
-                                                    <Users class="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => startEdit(task)}
-                                                    class="text-blue-600 hover:text-blue-700 p-2 rounded-lg hover:bg-blue-50 transition-colors"
-                                                    title="Edit"
-                                                >
-                                                    <Edit class="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => deleteShiftTaskName(task.id)}
-                                                    class="text-red-600 hover:text-red-700 p-2 rounded-lg hover:bg-red-50 transition-colors"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 class="w-4 h-4" />
-                                                </button>
-                                            </div>
+                            </thead>
+                            <tbody>
+                                <Show when={shiftTaskNames().length === 0 && !error()}>
+                                    <tr>
+                                        <td colspan="6" class="text-center p-8 text-[var(--color-text-secondary)]">
+                                            No shift task names found. Click "Add Shift Task Name" to create one.
                                         </td>
                                     </tr>
-                                )}
-                            </For>
-                        </tbody>
-                    </table>
-                </div>
+                                </Show>
+                                <For each={shiftTaskNames()}>
+                                    {(task) => (
+                                        <tr class="border-b border-[var(--color-border)] hover:bg-[var(--color-light-gray)] transition-colors">
+                                            <td class="p-4">
+                                                <div class="font-medium text-[var(--color-text-primary)]">{task.name}</div>
+                                                <div class="text-xs text-[var(--color-text-secondary)] mt-1">
+                                                    <For each={task.schedules}>
+                                                        {(schedule) => (
+                                                            <div>Shift-{schedule.shift_number}: {schedule.start_time} - {schedule.end_time}</div>
+                                                        )}
+                                                    </For>
+                                                </div>
+                                            </td>
+                                            <td class="p-4">
+                                                <div class="flex items-center gap-2">
+                                                    <Building2 class="w-4 h-4 text-[var(--color-text-secondary)]" />
+                                                    <span class="text-[var(--color-text-primary)]">{task.department}</span>
+                                                </div>
+                                            </td>
+                                            <td class="p-4">
+                                                <div class="flex items-center gap-2">
+                                                    <MapPin class="w-4 h-4 text-[var(--color-text-secondary)]" />
+                                                    <span class="text-[var(--color-text-primary)]">{task.working_location}</span>
+                                                </div>
+                                            </td>
+                                            <td class="p-4">
+                                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                                                    {task.shift_type}
+                                                </span>
+                                            </td>
+                                            <td class="p-4">
+                                                <div class="flex items-center gap-2">
+                                                    <Users class="w-4 h-4 text-[var(--color-text-secondary)]" />
+                                                    <span class="font-semibold text-[var(--color-text-primary)]">{task.number_of_groups} Group</span>
+                                                </div>
+                                            </td>
+                                            <td class="p-4">
+                                                <div class="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => navigate(`/shift-management/${encodeURIComponent(extractId(task.id))}/groups`)}
+                                                        class="text-green-600 hover:text-green-700 p-2 rounded-lg hover:bg-green-50 transition-colors"
+                                                        title="Manage Employee Groups"
+                                                    >
+                                                        <Users class="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => startEdit(task)}
+                                                        class="text-blue-600 hover:text-blue-700 p-2 rounded-lg hover:bg-blue-50 transition-colors"
+                                                        title="Edit"
+                                                    >
+                                                        <Edit class="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => deleteShiftTaskName(extractId(task.id))}
+                                                        class="text-red-600 hover:text-red-700 p-2 rounded-lg hover:bg-red-50 transition-colors"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 class="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </For>
+                            </tbody>
+                        </table>
+                    </div>
+                </Show>
             </div>
 
             {/* Create Modal */}
@@ -400,7 +395,7 @@ const ShiftManagement: Component = () => {
                                     </label>
                                     <select
                                         value={formData().shift_type}
-                                        onChange={(e) => updateShiftType(e.currentTarget.value)}
+                                        onChange={(e) => updateShiftType(e.currentTarget.value as "2 Sesi" | "3 Sesi")}
                                         class="w-full px-4 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                                     >
                                         <option value="2 Sesi">2 Sesi</option>
@@ -471,9 +466,13 @@ const ShiftManagement: Component = () => {
                                 </button>
                                 <button
                                     onClick={createShiftTaskName}
-                                    class="flex-1 px-4 py-2 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-blue-700 transition-all"
+                                    disabled={isSaving()}
+                                    class="flex-1 px-4 py-2 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
-                                    Create Shift Task
+                                    <Show when={isSaving()}>
+                                        <Loader2 class="w-4 h-4 animate-spin" />
+                                    </Show>
+                                    {isSaving() ? "Creating..." : "Create Shift Task"}
                                 </button>
                             </div>
                         </div>
@@ -540,7 +539,7 @@ const ShiftManagement: Component = () => {
                                     </label>
                                     <select
                                         value={formData().shift_type}
-                                        onChange={(e) => updateShiftType(e.currentTarget.value)}
+                                        onChange={(e) => updateShiftType(e.currentTarget.value as "2 Sesi" | "3 Sesi")}
                                         class="w-full px-4 py-2 border border-[var(--color-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-button)]"
                                     >
                                         <option value="2 Sesi">2 Sesi</option>
@@ -605,9 +604,13 @@ const ShiftManagement: Component = () => {
                                 </button>
                                 <button
                                     onClick={updateShiftTaskName}
-                                    class="flex-1 px-4 py-2 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-blue-700 transition-all"
+                                    disabled={isSaving()}
+                                    class="flex-1 px-4 py-2 bg-[var(--color-primary-button)] text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
-                                    Update Shift Task
+                                    <Show when={isSaving()}>
+                                        <Loader2 class="w-4 h-4 animate-spin" />
+                                    </Show>
+                                    {isSaving() ? "Updating..." : "Update Shift Task"}
                                 </button>
                             </div>
                         </div>
