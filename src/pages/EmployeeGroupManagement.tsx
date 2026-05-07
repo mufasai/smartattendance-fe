@@ -70,6 +70,10 @@ const EmployeeGroupManagement: Component = () => {
         setError(null);
 
         try {
+            if (!params.id) {
+                throw new Error("No shift task ID provided");
+            }
+
             console.log("Fetching shift task with ID:", params.id);
             const task = await shiftTaskService.getById(params.id);
             console.log("Fetched shift task from API:", task);
@@ -89,7 +93,9 @@ const EmployeeGroupManagement: Component = () => {
             initializeGroups(task.number_of_groups);
 
             // Try to load existing groups from API
-            await fetchExistingGroups(params.id);
+            if (params.id) {
+                await fetchExistingGroups(params.id);
+            }
         } catch (err) {
             const errorMessage = err instanceof ApiError ? err.message : "Failed to fetch shift task";
             setError(errorMessage);
@@ -474,6 +480,11 @@ const EmployeeGroupManagement: Component = () => {
 
     // Save groups to API
     const saveGroupsToAPI = async (groupsData: EmployeeGroup[]) => {
+        if (!params.id) {
+            console.error("No shift task ID provided");
+            return;
+        }
+
         try {
             const saveDto = {
                 groups: groupsData.map(group => ({
