@@ -23,6 +23,8 @@ import AssignmentForm, { type CreateAssignmentPayload } from "../components/Assi
 import ConfirmModal from "../components/ConfirmModal";
 import { config } from "../config/env";
 import { toast } from "solid-toast";
+import { patrolService } from "../services/patrolService";
+import { ApiError, apiClient } from "../utils/apiClient";
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Employee {
@@ -134,15 +136,14 @@ const Patrol: Component = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${BASE_URL}/patrol/checkpoints`);
-      const result = await res.json();
-      if (res.ok && result.status === "success") {
-        setCheckpoints(result.data.map(mapCheckpoint));
+      const data = await patrolService.getCheckpoints();
+      setCheckpoints(data.map(mapCheckpoint));
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setError(err.message);
       } else {
-        setError(result.message ?? "Gagal mengambil data checkpoint.");
+        setError("Koneksi ke backend gagal. Pastikan server berjalan.");
       }
-    } catch {
-      setError("Koneksi ke backend gagal. Pastikan server berjalan.");
     } finally {
       setIsLoading(false);
     }
@@ -150,32 +151,31 @@ const Patrol: Component = () => {
 
   const fetchAreas = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/patrol/areas`);
-      const result = await res.json();
-      if (res.ok && result.status === "success") {
-        setAreas(result.data.map((a: any) => ({ ...a, id: extractId(a.id) })));
-      }
-    } catch (err) { console.error("Gagal ambil area", err); }
+      const data = await patrolService.getAreas();
+      setAreas(data.map((a: any) => ({ ...a, id: extractId(a.id) })));
+    } catch (err) {
+      console.error("Gagal ambil area", err);
+    }
   };
 
   const saveArea = async (data: { name: string; description: string }) => {
     setIsSaving(true);
     try {
       const editing = editingArea();
-      const url = editing ? `${BASE_URL}/patrol/areas/${editing.id}` : `${BASE_URL}/patrol/areas`;
-      const res = await fetch(url, {
-        method: editing ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (res.ok) {
-        setConfigModalOpen(false);
-        setEditingArea(null);
-        setAreaName("");
-        await fetchAreas();
+      if (editing) {
+        await patrolService.updateArea(editing.id, data);
+      } else {
+        await patrolService.createArea(data);
       }
-    } catch (err) { console.error("Gagal simpan area", err); }
-    finally { setIsSaving(false); }
+      setConfigModalOpen(false);
+      setEditingArea(null);
+      setAreaName("");
+      await fetchAreas();
+    } catch (err) {
+      console.error("Gagal simpan area", err);
+    } finally {
+      setIsSaving(false);
+    }
   };
   const openDeleteAreaConfirm = (id: string) => {
     setAreaToDelete(id);
@@ -188,12 +188,10 @@ const Patrol: Component = () => {
 
     setIsLoading(true);
     try {
-      const res = await fetch(`${BASE_URL}/patrol/areas/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setAreaDeleteConfirmOpen(false);
-        setAreaToDelete(null);
-        await fetchAreas();
-      }
+      await patrolService.deleteArea(id);
+      setAreaDeleteConfirmOpen(false);
+      setAreaToDelete(null);
+      await fetchAreas();
     } catch (err) {
       console.error("Gagal hapus area", err);
     } finally {
@@ -203,12 +201,13 @@ const Patrol: Component = () => {
 
   const fetchGroups = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/groups`);
-      const result = await res.json();
-      if (res.ok && result.status === "success") {
-        setGroups(result.data.map((g: any) => ({ ...g, id: extractId(g.id) })));
+      const data = await apiClient.get("/groups");
+      if (data.status === "success") {
+        setGroups(data.data.map((g: any) => ({ ...g, id: extractId(g.id) })));
       }
-    } catch (err) { console.error("Gagal ambil grup", err); }
+    } catch (err) {
+      console.error("Gagal ambil grup", err);
+    }
   };
 
   const saveCheckpoint = async (data: Omit<Checkpoint, "status">) => {
@@ -225,27 +224,20 @@ const Patrol: Component = () => {
 
     try {
       const editing = editingCheckpoint();
-      const url = editing
-        ? `${BASE_URL}/patrol/checkpoints/${editing.id}`
-        : `${BASE_URL}/patrol/checkpoints`;
-      const method = editing ? "PUT" : "POST";
-
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const result = await res.json();
-
-      if (res.ok && result.status === "success") {
-        setConfigModalOpen(false);
-        setEditingCheckpoint(null);
-        await fetchCheckpoints();
+      if (editing) {
+        await patrolService.updateCheckpoint(editing.id, payload);
       } else {
-        setError(result.message ?? "Gagal menyimpan checkpoint.");
+        await patrolService.createCheckpoint(payload);
       }
-    } catch {
-      setError("Network error saat menyimpan checkpoint.");
+      setConfigModalOpen(false);
+      setEditingCheckpoint(null);
+      await fetchCheckpoints();
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError("Network error saat menyimpan checkpoint.");
+      }
     } finally {
       setIsSaving(false);
     }
@@ -257,17 +249,16 @@ const Patrol: Component = () => {
 
     setIsLoading(true);
     try {
-      const res = await fetch(`${BASE_URL}/patrol/checkpoints/${id}`, { method: "DELETE" });
-      const result = await res.json();
-      if (res.ok && result.status === "success") {
-        setConfirmDeleteOpen(false);
-        setCheckpointToDelete(null);
-        await fetchCheckpoints();
+      await patrolService.deleteCheckpoint(id);
+      setConfirmDeleteOpen(false);
+      setCheckpointToDelete(null);
+      await fetchCheckpoints();
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setError(err.message);
       } else {
-        setError(result.message ?? "Gagal menghapus checkpoint.");
+        setError("Network error saat menghapus checkpoint.");
       }
-    } catch {
-      setError("Network error saat menghapus checkpoint.");
     } finally {
       setIsLoading(false);
     }
@@ -282,12 +273,8 @@ const Patrol: Component = () => {
 
   const fetchAssignments = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/patrol/assignments`);
-      const result = await res.json();
-      // Response is now PatrolAssignmentResponse — IDs are already plain strings
-      if (res.ok && result.status === "success") {
-        setAssignments(result.data ?? []);
-      }
+      const data = await patrolService.getAssignments();
+      setAssignments(data ?? []);
     } catch {
       console.error("Gagal mengambil data assignment.");
     }
@@ -297,20 +284,15 @@ const Patrol: Component = () => {
     setIsSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${BASE_URL}/patrol/assignments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const result = await res.json();
-      if (res.ok && result.status === "success") {
-        setAssignmentModalOpen(false);
-        await Promise.all([fetchAssignments(), fetchActiveStatus()]);
+      await patrolService.createAssignment(payload);
+      setAssignmentModalOpen(false);
+      await Promise.all([fetchAssignments(), fetchActiveStatus()]);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setError(err.message);
       } else {
-        setError(result.message ?? "Gagal membuat assignment.");
+        setError("Network error saat membuat assignment.");
       }
-    } catch {
-      setError("Network error saat membuat assignment.");
     } finally {
       setIsSaving(false);
     }
@@ -319,20 +301,15 @@ const Patrol: Component = () => {
   const updateAssignmentStatus = async (id: string, newStatus: string) => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${BASE_URL}/patrol/assignments/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      if (res.ok) {
-        await fetchAssignments();
-        await fetchActiveStatus();
+      await patrolService.updateAssignment(id, { status: newStatus });
+      await fetchAssignments();
+      await fetchActiveStatus();
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setError(err.message);
       } else {
-        const result = await res.json();
-        setError(result.message || "Gagal memperbarui status.");
+        setError("Network error saat memperbarui status.");
       }
-    } catch {
-      setError("Network error saat memperbarui status.");
     } finally {
       setIsLoading(false);
     }
@@ -346,11 +323,10 @@ const Patrol: Component = () => {
 
   const fetchEmployees = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/employees`);
-      const result = await res.json();
-      if (res.ok && result.status === "success") {
+      const data = await apiClient.get("/employees");
+      if (data.status === "success") {
         setEmployees(
-          result.data.map((e: any) => ({
+          data.data.map((e: any) => ({
             id: extractId(e.id),
             nik: e.nik,
             full_name: e.full_name,
@@ -453,9 +429,8 @@ const Patrol: Component = () => {
   // Fetch Incidents
   const fetchIncidents = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/patrol/incidents`);
-      const data = await res.json();
-      if (data.status === "success") setIncidents(data.data || []);
+      const data = await patrolService.getIncidents();
+      setIncidents(data || []);
     } catch (e) {
       console.error("Error fetching incidents:", e);
     }
@@ -464,9 +439,8 @@ const Patrol: Component = () => {
   // Fetch Checkpoint Reports
   const fetchCheckpointReports = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/patrol/checkpoint-reports`);
-      const data = await res.json();
-      if (data.status === "success") setCheckpointReports(data.data || []);
+      const data = await patrolService.getCheckpointReports();
+      setCheckpointReports(data || []);
     } catch (e) {
       console.error("Error fetching checkpoint reports:", e);
     }
@@ -489,18 +463,11 @@ const Patrol: Component = () => {
         photo_url: ""
       };
 
-      const res = await fetch(`${BASE_URL}/patrol/incident`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-
-      if (res.ok) {
-        toast.success("Insiden berhasil dilaporkan");
-        setReportModalOpen(false);
-        setNewIncident({ title: "", description: "", location: "", time: "", photo: null, photoPreview: "" });
-        fetchIncidents();
-      }
+      await apiClient.post("/patrol/incident", body);
+      toast.success("Insiden berhasil dilaporkan");
+      setReportModalOpen(false);
+      setNewIncident({ title: "", description: "", location: "", time: "", photo: null, photoPreview: "" });
+      fetchIncidents();
     } catch (e) {
       toast.error("Gagal melaporkan insiden");
     } finally {
@@ -510,11 +477,8 @@ const Patrol: Component = () => {
 
   const fetchActivePatrols = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/patrol/status/active`);
-      const result = await res.json();
-      if (res.ok && result.status === "success") {
-        setActivePatrols(result.data ?? []);
-      }
+      const data = await patrolService.getActivePatrols();
+      setActivePatrols(data ?? []);
     } catch {
       console.error("Gagal mengambil status patroli aktif.");
     }

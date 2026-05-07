@@ -22,6 +22,10 @@ import {
   FileUp,
 } from "lucide-solid";
 import * as XLSX from 'xlsx';
+import { employeeService } from "../services/employeeService";
+import { wifiService } from "../services/wifiService";
+import { locationService } from "../services/locationService";
+import { ApiError } from "../utils/apiClient";
 
 interface AttendanceRequirement {
   wifi_enabled: boolean;
@@ -138,67 +142,39 @@ const EmployeeManagement: Component = () => {
     attendance_requirement: null as AttendanceRequirement | null,
   });
 
-  const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080/api";
-
   const fetchEmployees = async (forceRefresh: boolean = false) => {
     setIsLoading(true);
     setError(null);
     try {
-      const url = forceRefresh
-        ? `${BASE_URL}/employees?_t=${Date.now()}`
-        : `${BASE_URL}/employees`;
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          "Pragma": "no-cache",
-          "Expires": "0"
-        }
-      });
-      if (!response.ok) {
-        setError(`Server error: ${response.status} ${response.statusText}`);
-        return;
-      }
-
-      const text = await response.text();
-      if (!text) {
-        setError("Empty response from server");
-        return;
-      }
-
-      const result = JSON.parse(text);
-
-      if (result.status === "success") {
-        const dataArray = Array.isArray(result.data) ? result.data : [result.data];
-
-        const mappedData = dataArray.map((item: any) => {
-          let extractedId = "unknown";
-          if (item.id) {
-            if (typeof item.id === "string") {
-              extractedId = item.id;
-            } else if (item.id.id) {
-              if (typeof item.id.id === "string") {
-                extractedId = item.id.id;
-              } else if (item.id.id.String) {
-                extractedId = item.id.id.String;
-              }
+      const data = await employeeService.getAll();
+      
+      const mappedData = data.map((item: any) => {
+        let extractedId = "unknown";
+        if (item.id) {
+          if (typeof item.id === "string") {
+            extractedId = item.id;
+          } else if (item.id.id) {
+            if (typeof item.id.id === "string") {
+              extractedId = item.id.id;
+            } else if (item.id.id.String) {
+              extractedId = item.id.id.String;
             }
           }
-          return {
-            ...item,
-            id: extractedId,
-            department: item.department || "General",
-            status: item.status || "Active",
-          };
-        });
-        setEmployees(mappedData);
-      } else {
-        setError(result.message || "Failed to fetch employees");
-      }
+        }
+        return {
+          ...item,
+          id: extractedId,
+          department: item.department || "General",
+          status: item.status || "Active",
+        };
+      });
+      setEmployees(mappedData);
     } catch (err: any) {
-      setError(err.message || "Network error. Is the backend running?");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to fetch employees");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -206,18 +182,12 @@ const EmployeeManagement: Component = () => {
 
   const fetchWiFiSettings = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/wifi-settings/all`);
-      const text = await response.text();
-      if (text) {
-        const result = JSON.parse(text);
-        if (result.success) {
-          const mappedData = result.data.map((item: any) => ({
-            ...item,
-            id: item.id?.id?.String || item.id?.id || item.id,
-          }));
-          setWifiSettings(mappedData);
-        }
-      }
+      const data = await wifiService.getAll();
+      const mappedData = data.map((item: any) => ({
+        ...item,
+        id: item.id?.id?.String || item.id?.id || item.id,
+      }));
+      setWifiSettings(mappedData);
     } catch (err) {
       console.error("Failed to fetch WiFi settings:", err);
     }
@@ -225,18 +195,12 @@ const EmployeeManagement: Component = () => {
 
   const fetchLocationBoundaries = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/location-boundaries/all`);
-      const text = await response.text();
-      if (text) {
-        const result = JSON.parse(text);
-        if (result.success) {
-          const mappedData = result.data.map((item: any) => ({
-            ...item,
-            id: item.id?.id?.String || item.id?.id || item.id,
-          }));
-          setLocationBoundaries(mappedData);
-        }
-      }
+      const data = await locationService.getAll();
+      const mappedData = data.map((item: any) => ({
+        ...item,
+        id: item.id?.id?.String || item.id?.id || item.id,
+      }));
+      setLocationBoundaries(mappedData);
     } catch (err) {
       console.error("Failed to fetch location boundaries:", err);
     }
@@ -260,34 +224,25 @@ const EmployeeManagement: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/employees`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
-      });
+      await employeeService.create(data);
+      
+      // Close modal and reset form first
+      setShowAddModal(false);
+      resetForm();
+      setError(null);
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { status: "error", message: "Empty response" };
+      // Fetch updated data with force refresh
+      await fetchEmployees(true);
 
-      if (response.ok && result.status === "success") {
-        // Close modal and reset form first
-        setShowAddModal(false);
-        resetForm();
-        setError(null);
-
-        // Fetch updated data with force refresh
-        await fetchEmployees(true);
-
-        // Show success message after modal is closed
-        setSuccess("Employee created successfully");
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to create employee");
-      }
+      // Show success message after modal is closed
+      setSuccess("Employee created successfully");
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to create employee");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -321,38 +276,30 @@ const EmployeeManagement: Component = () => {
       // Only include password if provided
       if (data.password) payload.password = data.password;
 
-      // Only include attendance_requirement if it was set (not null) — 
-      // sending null would wipe the existing value in the backend
+      // Only include attendance_requirement if it was set (not null)
       if (data.attendance_requirement !== null) {
         payload.attendance_requirement = data.attendance_requirement;
       }
 
-      const response = await fetch(`${BASE_URL}/employees/${employee.nik}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      await employeeService.update(employee.id, payload);
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { status: "error", message: "Empty response" };
+      // Close modal and reset state first
+      setShowEditModal(false);
+      setEditingEmployee(null);
+      setError(null);
 
-      if (response.ok && result.status === "success") {
-        // Close modal and reset state first
-        setShowEditModal(false);
-        setEditingEmployee(null);
-        setError(null);
+      // Fetch updated data with force refresh
+      await fetchEmployees(true);
 
-        // Fetch updated data with force refresh
-        await fetchEmployees(true);
-
-        // Show success message after modal is closed
-        setSuccess("Employee updated successfully");
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to update employee");
-      }
+      // Show success message after modal is closed
+      setSuccess("Employee updated successfully");
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to update employee");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -366,25 +313,28 @@ const EmployeeManagement: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/employees/${nik}`, {
-        method: "DELETE",
-      });
-
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { status: "error", message: "Empty response" };
-
-      if (response.ok && result.status === "success") {
-        // Fetch updated data with force refresh
-        await fetchEmployees(true);
-
-        // Show success message
-        setSuccess("Employee deleted successfully");
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to delete employee");
+      // Note: employeeService.delete expects ID, but we're using NIK
+      // We need to find the employee ID first
+      const employee = employees().find(e => e.nik === nik);
+      if (!employee) {
+        setError("Employee not found");
+        return;
       }
+
+      await employeeService.delete(employee.id);
+
+      // Fetch updated data with force refresh
+      await fetchEmployees(true);
+
+      // Show success message
+      setSuccess("Employee deleted successfully");
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to delete employee");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -520,35 +470,28 @@ const EmployeeManagement: Component = () => {
 
     try {
       const niks = Array.from(selectedEmployees());
-      const response = await fetch(`${BASE_URL}/employees/bulk-attendance`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          employee_niks: niks,
-          attendance_requirement: bulkAttendanceData(),
-        }),
+      await employeeService.bulkUpdateAttendance({
+        employee_niks: niks,
+        attendance_requirement: bulkAttendanceData(),
       });
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { status: "error" };
+      // Close modal and clear selection first
+      setShowBulkAttendanceModal(false);
+      setSelectedEmployees(new Set<string>());
+      setError(null);
 
-      if (response.ok && result.status === "success") {
-        // Close modal and clear selection first
-        setShowBulkAttendanceModal(false);
-        setSelectedEmployees(new Set<string>());
-        setError(null);
+      // Fetch updated data with force refresh
+      await fetchEmployees(true);
 
-        // Fetch updated data with force refresh
-        await fetchEmployees(true);
-
-        // Show success message after modal is closed
-        setSuccess(`Attendance requirements updated for ${niks.length} employees`);
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to update attendance requirements");
-      }
+      // Show success message after modal is closed
+      setSuccess(`Attendance requirements updated for ${niks.length} employees`);
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to update attendance requirements");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -694,33 +637,26 @@ const EmployeeManagement: Component = () => {
         emergency_phone: String(row["Emergency Phone"] || row.emergency_phone || ""),
       }));
 
-      const response = await fetch(`${BASE_URL}/employees/bulk`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employees }),
-      });
+      await employeeService.bulkCreate({ employees });
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { status: "error" };
+      // Close modal and reset state first
+      setShowImportModal(false);
+      setImportFile(null);
+      setImportPreview([]);
+      setError(null);
 
-      if (response.ok && result.status === "success") {
-        // Close modal and reset state first
-        setShowImportModal(false);
-        setImportFile(null);
-        setImportPreview([]);
-        setError(null);
+      // Fetch updated data with force refresh
+      await fetchEmployees(true);
 
-        // Fetch updated data with force refresh
-        await fetchEmployees(true);
-
-        // Show success message after modal is closed
-        setSuccess(`Successfully imported ${employees.length} employees`);
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to import employees");
-      }
+      // Show success message after modal is closed
+      setSuccess(`Successfully imported ${employees.length} employees`);
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to import employees");
+      }
     } finally {
       setIsLoading(false);
     }
