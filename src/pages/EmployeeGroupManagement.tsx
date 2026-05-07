@@ -113,73 +113,35 @@ const EmployeeGroupManagement: Component = () => {
             console.log("Fetched existing groups:", response);
 
             if (response.groups && response.groups.length > 0) {
-                // Wait for employees to be loaded first
-                // This will be called after fetchEmployees completes
-                // So we need to populate employees from employee_niks
-
-                // Store groups temporarily with employee_niks
-                const groupsWithNiks = response.groups.map(group => ({
+                // Map groups with employees directly from API response
+                const mappedGroups = response.groups.map(group => ({
                     id: extractId(group.id),
                     name: group.name,
-                    employee_niks: group.employee_niks || [],
-                    employees: [] as Employee[], // Will be populated after employees are loaded
+                    employees: (group.employees || []).map(emp => ({
+                        id: extractId(emp.id),
+                        nik: emp.nik,
+                        full_name: emp.full_name,
+                        department: emp.department || "General",
+                        working_time: "Shift",
+                        location: "Main Office",
+                    })),
                 }));
 
-                // Store for later population
-                (window as any).__pendingGroups = groupsWithNiks;
+                console.log("Mapped groups with employees:", mappedGroups);
+                setGroups(mappedGroups);
 
-                setGroups(groupsWithNiks.map(g => ({
-                    id: g.id,
-                    name: g.name,
-                    employees: [],
-                })));
+                // Update available employees (remove those already in groups)
+                const assignedNiks = new Set(
+                    mappedGroups.flatMap(g => g.employees.map(e => e.nik))
+                );
+                setAvailableEmployees(prev =>
+                    prev.filter(emp => !assignedNiks.has(emp.nik))
+                );
             }
         } catch (err) {
             console.log("No existing groups found or error fetching:", err);
             // Not a critical error - groups might not exist yet
         }
-    };
-
-    // Populate employees in groups after employees are loaded
-    const populateGroupEmployees = () => {
-        const pendingGroups = (window as any).__pendingGroups;
-        if (!pendingGroups || pendingGroups.length === 0) return;
-
-        const allEmps = allEmployees();
-        if (allEmps.length === 0) return;
-
-        console.log("Populating group employees...");
-        console.log("Pending groups:", pendingGroups);
-        console.log("All employees:", allEmps);
-
-        const populatedGroups = pendingGroups.map((group: any) => {
-            const employees = group.employee_niks
-                .map((nik: string) => allEmps.find(emp => emp.nik === nik))
-                .filter((emp: Employee | undefined): emp is Employee => emp !== undefined);
-
-            console.log(`Group ${group.name}: ${group.employee_niks.length} NIKs -> ${employees.length} employees`);
-
-            return {
-                id: group.id,
-                name: group.name,
-                employees: employees,
-            };
-        });
-
-        setGroups(populatedGroups);
-
-        // Update available employees (remove those already in groups)
-        const assignedNiks = new Set(
-            pendingGroups.flatMap((g: any) => g.employee_niks || [])
-        );
-        setAvailableEmployees(prev =>
-            prev.filter(emp => !assignedNiks.has(emp.nik))
-        );
-
-        // Clear pending groups
-        delete (window as any).__pendingGroups;
-
-        console.log("Groups populated successfully:", populatedGroups);
     };
 
     // Initialize groups based on number_of_groups
@@ -201,6 +163,8 @@ const EmployeeGroupManagement: Component = () => {
     // Fetch employees
     const fetchEmployees = async () => {
         setIsLoading(true);
+        setError(null);
+
         try {
             const response = await fetch(`${BASE_URL}/employees`);
             const result = await response.json();
@@ -209,7 +173,7 @@ const EmployeeGroupManagement: Component = () => {
 
             if (response.ok && result.status === "success") {
                 const mappedData = result.data.map((item: any) => ({
-                    id: item.id?.id?.String || item.id?.id || item.id,
+                    id: extractId(item.id),
                     nik: item.nik,
                     full_name: item.full_name,
                     department: item.department || "General",
@@ -235,83 +199,28 @@ const EmployeeGroupManagement: Component = () => {
 
                     console.log(`Filter: ${filtered.length}/${mappedData.length} employees match dept "${task.department}"`);
                     setAllEmployees(filtered);
-                    setAvailableEmployees(filtered);
 
-                    // Populate group employees after employees are loaded
-                    populateGroupEmployees();
+                    // Update available employees (remove those already in groups)
+                    const assignedNiks = new Set(
+                        groups().flatMap(g => g.employees.map(e => e.nik))
+                    );
+                    setAvailableEmployees(filtered.filter((emp: { nik: string; }) => !assignedNiks.has(emp.nik)));
                 } else {
                     // No task filter — show all employees
                     setAllEmployees(mappedData);
-                    setAvailableEmployees(mappedData);
 
-                    // Populate group employees after employees are loaded
-                    populateGroupEmployees();
+                    // Update available employees (remove those already in groups)
+                    const assignedNiks = new Set(
+                        groups().flatMap(g => g.employees.map(e => e.nik))
+                    );
+                    setAvailableEmployees(mappedData.filter((emp: { nik: string; }) => !assignedNiks.has(emp.nik)));
                 }
             } else {
-                console.log("API failed, using mock data");
-                // Mock data for testing
-                const mockEmployees: Employee[] = [
-                    { id: "1", nik: "001", full_name: "Agus Santoso", department: "Security", working_time: "Shift", location: "Head Office" },
-                    { id: "2", nik: "002", full_name: "Budi Prasetyo", department: "Security", working_time: "Shift", location: "Head Office" },
-                    { id: "3", nik: "003", full_name: "Catur Wibowo", department: "Security", working_time: "Shift", location: "Head Office" },
-                    { id: "4", nik: "004", full_name: "Dodik Setiawan", department: "Security", working_time: "Shift", location: "Head Office" },
-                    { id: "5", nik: "005", full_name: "Eko Susanto", department: "Security", working_time: "Shift", location: "Head Office" },
-                    { id: "6", nik: "006", full_name: "Fajar Rahman", department: "Security", working_time: "Shift", location: "Head Office" },
-                    { id: "7", nik: "007", full_name: "Gunawan Adi", department: "Security", working_time: "Shift", location: "Head Office" },
-                    { id: "8", nik: "008", full_name: "Hendra Wijaya", department: "Security", working_time: "Shift", location: "Head Office" },
-                    { id: "9", nik: "009", full_name: "Indra Kusuma", department: "Security", working_time: "Shift", location: "Head Office" },
-                    { id: "10", nik: "010", full_name: "Joko Susilo", department: "Security", working_time: "Shift", location: "Head Office" },
-                    { id: "11", nik: "011", full_name: "Kurniawan Eko", department: "Security", working_time: "Shift", location: "Head Office" },
-                    { id: "12", nik: "012", full_name: "Lukman Hakim", department: "Security", working_time: "Shift", location: "Head Office" },
-                ];
-
-                const task = shiftTask();
-                if (task) {
-                    const taskDept = task.department.toLowerCase().trim();
-                    const filtered = mockEmployees.filter(emp => {
-                        const empDept = emp.department.toLowerCase().trim();
-                        return !taskDept || empDept.includes(taskDept) || taskDept.includes(empDept);
-                    });
-                    setAllEmployees(filtered);
-                    setAvailableEmployees(filtered);
-                    populateGroupEmployees();
-                } else {
-                    setAllEmployees(mockEmployees);
-                    setAvailableEmployees(mockEmployees);
-                    populateGroupEmployees();
-                }
+                throw new Error("Failed to fetch employees from API");
             }
         } catch (err) {
             console.error("Failed to fetch employees:", err);
-            const mockEmployees: Employee[] = [
-                { id: "1", nik: "001", full_name: "Agus Santoso", department: "Security", working_time: "Shift", location: "Head Office" },
-                { id: "2", nik: "002", full_name: "Budi Prasetyo", department: "Security", working_time: "Shift", location: "Head Office" },
-                { id: "3", nik: "003", full_name: "Catur Wibowo", department: "Security", working_time: "Shift", location: "Head Office" },
-                { id: "4", nik: "004", full_name: "Dodik Setiawan", department: "Security", working_time: "Shift", location: "Head Office" },
-                { id: "5", nik: "005", full_name: "Eko Susanto", department: "Security", working_time: "Shift", location: "Head Office" },
-                { id: "6", nik: "006", full_name: "Fajar Rahman", department: "Security", working_time: "Shift", location: "Head Office" },
-                { id: "7", nik: "007", full_name: "Gunawan Adi", department: "Security", working_time: "Shift", location: "Head Office" },
-                { id: "8", nik: "008", full_name: "Hendra Wijaya", department: "Security", working_time: "Shift", location: "Head Office" },
-                { id: "9", nik: "009", full_name: "Indra Kusuma", department: "Security", working_time: "Shift", location: "Head Office" },
-                { id: "10", nik: "010", full_name: "Joko Susilo", department: "Security", working_time: "Shift", location: "Head Office" },
-                { id: "11", nik: "011", full_name: "Kurniawan Eko", department: "Security", working_time: "Shift", location: "Head Office" },
-                { id: "12", nik: "012", full_name: "Lukman Hakim", department: "Security", working_time: "Shift", location: "Head Office" },
-            ];
-            const errTask = shiftTask();
-            if (errTask) {
-                const taskDept = errTask.department.toLowerCase().trim();
-                const filtered = mockEmployees.filter(emp => {
-                    const empDept = emp.department.toLowerCase().trim();
-                    return !taskDept || empDept.includes(taskDept) || taskDept.includes(empDept);
-                });
-                setAllEmployees(filtered);
-                setAvailableEmployees(filtered);
-                populateGroupEmployees();
-            } else {
-                setAllEmployees(mockEmployees);
-                setAvailableEmployees(mockEmployees);
-                populateGroupEmployees();
-            }
+            setError("Failed to load employees. Please refresh the page.");
         } finally {
             setIsLoading(false);
         }
@@ -533,6 +442,13 @@ const EmployeeGroupManagement: Component = () => {
 
     // Add employee to specific group
     const addEmployeeToGroup = (groupId: string, employee: Employee) => {
+        // Check if employee is already in this group
+        const targetGroup = groups().find(g => g.id === groupId);
+        if (targetGroup && targetGroup.employees.some(emp => emp.id === employee.id)) {
+            console.log("Employee already in this group");
+            return;
+        }
+
         const newGroups = groups().map(group => {
             if (group.id === groupId) {
                 return {
@@ -544,6 +460,8 @@ const EmployeeGroupManagement: Component = () => {
         });
 
         setGroups(newGroups);
+
+        // Remove from available employees
         setAvailableEmployees(prev => prev.filter(emp => emp.id !== employee.id));
 
         // Save to API
@@ -570,8 +488,17 @@ const EmployeeGroupManagement: Component = () => {
 
         setGroups(newGroups);
 
+        // Add removed employee back to available employees
         if (removedEmployee) {
-            setAvailableEmployees(prev => [...prev, removedEmployee!]);
+            // Check if employee is in allEmployees (should be)
+            const isInAllEmployees = allEmployees().some(emp => emp.id === removedEmployee!.id);
+            if (isInAllEmployees) {
+                // Add back to available employees if not already there
+                const isAlreadyAvailable = availableEmployees().some(emp => emp.id === removedEmployee!.id);
+                if (!isAlreadyAvailable) {
+                    setAvailableEmployees(prev => [...prev, removedEmployee!]);
+                }
+            }
         }
 
         // Save to API
