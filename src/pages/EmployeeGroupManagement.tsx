@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "@solidjs/router";
 import { ArrowLeft, Users, RefreshCw, Shuffle, UserPlus, X, Calendar, Loader2, AlertCircle } from "lucide-solid";
 import { shiftTaskService } from "../services/shiftTaskService";
 import { employeeGroupService } from "../services/employeeGroupService";
+import { employeeService } from "../services/employeeService";
 import { extractId } from "../types/shiftManagement";
 import { ApiError } from "../utils/apiClient";
 
@@ -61,7 +62,6 @@ const EmployeeGroupManagement: Component = () => {
     const [schedulePreview, setSchedulePreview] = createSignal<DaySchedule[]>([]);
     const [showSchedulePreview, setShowSchedulePreview] = createSignal(false);
 
-    const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080/api";
     const dayNames = ["SENIN", "SELASA", "RABU", "KAMIS", "JUM'AT", "SABTU", "MINGGU"];
 
     // Fetch shift task data from API
@@ -166,61 +166,60 @@ const EmployeeGroupManagement: Component = () => {
         setError(null);
 
         try {
-            const response = await fetch(`${BASE_URL}/employees`);
-            const result = await response.json();
+            const data = await employeeService.getAll();
 
-            console.log("API Response:", result);
+            console.log("API Response:", data);
 
-            if (response.ok && result.status === "success") {
-                const mappedData = result.data.map((item: any) => ({
-                    id: extractId(item.id),
-                    nik: item.nik,
-                    full_name: item.full_name,
-                    department: item.department || "General",
-                    working_time: item.working_time || "Shift",
-                    location: item.location || "Main Office",
-                }));
+            const mappedData = data.map((item: any) => ({
+                id: extractId(item.id),
+                nik: item.nik,
+                full_name: item.full_name,
+                department: item.department || "General",
+                working_time: item.working_time || "Shift",
+                location: item.location || "Main Office",
+            }));
 
-                console.log("Mapped Data:", mappedData);
-                console.log("Shift Task:", shiftTask());
+            console.log("Mapped Data:", mappedData);
+            console.log("Shift Task:", shiftTask());
 
-                // Filter employees by department (flexible matching)
-                const task = shiftTask();
-                if (task) {
-                    const taskDept = task.department.toLowerCase().trim();
-                    const filtered = mappedData.filter((emp: Employee) => {
-                        const empDept = (emp.department || "").toLowerCase().trim();
-                        // Match if either contains the other (handles "Security" vs "Security Department")
-                        const deptMatch = !taskDept ||
-                            empDept.includes(taskDept) ||
-                            taskDept.includes(empDept);
-                        return deptMatch;
-                    });
+            // Filter employees by department (flexible matching)
+            const task = shiftTask();
+            if (task) {
+                const taskDept = task.department.toLowerCase().trim();
+                const filtered = mappedData.filter((emp: Employee) => {
+                    const empDept = (emp.department || "").toLowerCase().trim();
+                    // Match if either contains the other (handles "Security" vs "Security Department")
+                    const deptMatch = !taskDept ||
+                        empDept.includes(taskDept) ||
+                        taskDept.includes(empDept);
+                    return deptMatch;
+                });
 
-                    console.log(`Filter: ${filtered.length}/${mappedData.length} employees match dept "${task.department}"`);
-                    setAllEmployees(filtered);
+                console.log(`Filter: ${filtered.length}/${mappedData.length} employees match dept "${task.department}"`);
+                setAllEmployees(filtered);
 
-                    // Update available employees (remove those already in groups)
-                    const assignedNiks = new Set(
-                        groups().flatMap(g => g.employees.map(e => e.nik))
-                    );
-                    setAvailableEmployees(filtered.filter((emp: { nik: string; }) => !assignedNiks.has(emp.nik)));
-                } else {
-                    // No task filter — show all employees
-                    setAllEmployees(mappedData);
-
-                    // Update available employees (remove those already in groups)
-                    const assignedNiks = new Set(
-                        groups().flatMap(g => g.employees.map(e => e.nik))
-                    );
-                    setAvailableEmployees(mappedData.filter((emp: { nik: string; }) => !assignedNiks.has(emp.nik)));
-                }
+                // Update available employees (remove those already in groups)
+                const assignedNiks = new Set(
+                    groups().flatMap(g => g.employees.map(e => e.nik))
+                );
+                setAvailableEmployees(filtered.filter((emp: { nik: string; }) => !assignedNiks.has(emp.nik)));
             } else {
-                throw new Error("Failed to fetch employees from API");
+                // No task filter — show all employees
+                setAllEmployees(mappedData);
+
+                // Update available employees (remove those already in groups)
+                const assignedNiks = new Set(
+                    groups().flatMap(g => g.employees.map(e => e.nik))
+                );
+                setAvailableEmployees(mappedData.filter((emp: { nik: string; }) => !assignedNiks.has(emp.nik)));
             }
         } catch (err) {
             console.error("Failed to fetch employees:", err);
-            setError("Failed to load employees. Please refresh the page.");
+            if (err instanceof ApiError) {
+                setError(err.message);
+            } else {
+                setError("Failed to load employees. Please refresh the page.");
+            }
         } finally {
             setIsLoading(false);
         }

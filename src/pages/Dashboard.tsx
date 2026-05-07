@@ -1,7 +1,7 @@
 import { type Component, For, createSignal, createEffect, Show } from "solid-js";
 import { Users, UserCheck, Shield, TriangleAlert, TrendingUp, MapPin } from "lucide-solid";
 import type { DashboardData, ApiResponse, DashboardOverview, AttendanceAnalytics, IncidentAnalytics, PatrolAnalytics, PerformanceAnalytics, LocationAnalytics } from "../types/dashboard";
-import config from "../config/env";
+import { apiClient } from "../utils/apiClient";
 
 const Dashboard: Component = () => {
   const [dashboardData, setDashboardData] = createSignal<DashboardData | null>(null);
@@ -14,36 +14,30 @@ const Dashboard: Component = () => {
     setError(null);
 
     try {
-      const baseUrl = `${config.apiUrl}/dashboard`;
+      console.log("Fetching dashboard data with JWT token...");
 
-      console.log("Fetching from:", baseUrl);
-
-      const [overviewRes, attendanceRes, incidentsRes, patrolRes, performanceRes, locationRes] = await Promise.all([
-        fetch(`${baseUrl}/overview`),
-        fetch(`${baseUrl}/attendance`),
-        fetch(`${baseUrl}/incidents`),
-        fetch(`${baseUrl}/patrol`),
-        fetch(`${baseUrl}/performance`),
-        fetch(`${baseUrl}/locations`)
+      const [overviewRes, attendanceRes, incidentsRes, patrolRes, performanceRes, locationRes] = await Promise.allSettled([
+        apiClient.get<ApiResponse<{ overview: DashboardOverview }>>("/dashboard/overview"),
+        apiClient.get<ApiResponse<{ attendance_analytics: AttendanceAnalytics }>>("/dashboard/attendance"),
+        apiClient.get<ApiResponse<{ incident_analytics: IncidentAnalytics }>>("/dashboard/incidents"),
+        apiClient.get<ApiResponse<{ patrol_analytics: PatrolAnalytics }>>("/dashboard/patrol"),
+        apiClient.get<ApiResponse<{ performance_analytics: PerformanceAnalytics }>>("/dashboard/performance"),
+        apiClient.get<ApiResponse<{ location_analytics: LocationAnalytics }>>("/dashboard/locations")
       ]);
 
-      console.log("API responses:", {
-        overview: overviewRes.status,
-        attendance: attendanceRes.status,
-        incidents: incidentsRes.status,
-        patrol: patrolRes.status,
-        performance: performanceRes.status,
-        location: locationRes.status
-      });
+      console.log("API responses received");
 
       // Check if core endpoints are successful (overview, attendance, incidents, patrol are required)
-      if (overviewRes.ok && attendanceRes.ok && incidentsRes.ok && patrolRes.ok) {
-        const [overview, attendance, incidents, patrol] = await Promise.all([
-          overviewRes.json() as Promise<ApiResponse<{ overview: DashboardOverview }>>,
-          attendanceRes.json() as Promise<ApiResponse<{ attendance_analytics: AttendanceAnalytics }>>,
-          incidentsRes.json() as Promise<ApiResponse<{ incident_analytics: IncidentAnalytics }>>,
-          patrolRes.json() as Promise<ApiResponse<{ patrol_analytics: PatrolAnalytics }>>
-        ]);
+      if (
+        overviewRes.status === "fulfilled" &&
+        attendanceRes.status === "fulfilled" &&
+        incidentsRes.status === "fulfilled" &&
+        patrolRes.status === "fulfilled"
+      ) {
+        const overview = overviewRes.value;
+        const attendance = attendanceRes.value;
+        const incidents = incidentsRes.value;
+        const patrol = patrolRes.value;
 
         console.log("Successfully fetched core API data");
 
@@ -55,34 +49,29 @@ const Dashboard: Component = () => {
         };
 
         // Try to fetch optional endpoints (performance and location)
-        try {
-          if (performanceRes.ok) {
-            const performance = await performanceRes.json() as ApiResponse<{ performance_analytics: PerformanceAnalytics }>;
-            newData.performance = performance.data.performance_analytics;
-            console.log("Performance data loaded");
-          } else {
-            console.warn("Performance endpoint failed:", performanceRes.status);
-          }
-        } catch (perfError) {
-          console.warn("Performance data not available:", perfError);
+        if (performanceRes.status === "fulfilled") {
+          newData.performance = performanceRes.value.data.performance_analytics;
+          console.log("Performance data loaded");
+        } else {
+          console.warn("Performance endpoint failed:", performanceRes.reason);
         }
 
-        try {
-          if (locationRes.ok) {
-            const location = await locationRes.json() as ApiResponse<{ location_analytics: LocationAnalytics }>;
-            newData.location = location.data.location_analytics;
-            console.log("Location data loaded");
-          } else {
-            console.warn("Location endpoint failed:", locationRes.status);
-          }
-        } catch (locError) {
-          console.warn("Location data not available:", locError);
+        if (locationRes.status === "fulfilled") {
+          newData.location = locationRes.value.data.location_analytics;
+          console.log("Location data loaded");
+        } else {
+          console.warn("Location endpoint failed:", locationRes.reason);
         }
 
         setDashboardData(newData);
         console.log("Dashboard data set:", newData);
       } else {
-        throw new Error(`Core API requests failed - Status codes: ${overviewRes.status}, ${attendanceRes.status}, ${incidentsRes.status}, ${patrolRes.status}`);
+        const errors = [];
+        if (overviewRes.status === "rejected") errors.push(`Overview: ${overviewRes.reason}`);
+        if (attendanceRes.status === "rejected") errors.push(`Attendance: ${attendanceRes.reason}`);
+        if (incidentsRes.status === "rejected") errors.push(`Incidents: ${incidentsRes.reason}`);
+        if (patrolRes.status === "rejected") errors.push(`Patrol: ${patrolRes.reason}`);
+        throw new Error(`Core API requests failed: ${errors.join(", ")}`);
       }
     } catch (error) {
       console.error("Error fetching dashboard data:", error);

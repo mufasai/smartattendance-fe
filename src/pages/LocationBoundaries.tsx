@@ -12,6 +12,8 @@ import {
   Save,
   Navigation,
 } from "lucide-solid";
+import { locationService } from "../services/locationService";
+import { ApiError } from "../utils/apiClient";
 
 interface LocationBoundary {
   id: string;
@@ -55,18 +57,26 @@ const LocationBoundaries: Component = () => {
     is_active: true,
   });
 
-  const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080/api";
-
   const fetchLocations = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${BASE_URL}/location-boundaries/all`);
-      
-      if (!response.ok) {
-        setError(`Server error: ${response.status} ${response.statusText}`);
-        return;
+      const data = await locationService.getAll();
+      const mappedData = data.map((item: any) => ({
+        ...item,
+        id: item.id?.id?.String || item.id?.id || item.id,
+      }));
+      setLocations(mappedData);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to fetch location boundaries");
       }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
       const text = await response.text();
       if (!text) {
@@ -128,35 +138,26 @@ const LocationBoundaries: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/location-boundaries`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: data.name.trim(),
-          description: data.description.trim(),
-          latitude: data.latitude,
-          longitude: data.longitude,
-          radius: data.radius,
-          is_active: data.is_active,
-        }),
+      await locationService.create({
+        name: data.name.trim(),
+        description: data.description.trim(),
+        latitude: data.latitude,
+        longitude: data.longitude,
+        radius: data.radius,
+        is_active: data.is_active,
       });
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
-
-      if (response.ok && result.success) {
-        setSuccess("Location boundary berhasil ditambahkan");
-        setShowAddModal(false);
-        resetForm();
-        fetchLocations();
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to create location boundary");
-      }
+      setSuccess("Location boundary berhasil ditambahkan");
+      setShowAddModal(false);
+      resetForm();
+      fetchLocations();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to create location boundary");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -169,34 +170,25 @@ const LocationBoundaries: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/location-boundaries/${locationId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: data.name.trim(),
-          description: data.description.trim(),
-          latitude: data.latitude,
-          longitude: data.longitude,
-          radius: data.radius,
-          is_active: data.is_active,
-        }),
+      await locationService.update(locationId, {
+        name: data.name.trim(),
+        description: data.description.trim(),
+        latitude: data.latitude,
+        longitude: data.longitude,
+        radius: data.radius,
+        is_active: data.is_active,
       });
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
-
-      if (response.ok && result.success) {
-        setSuccess("Location boundary berhasil diupdate");
-        setEditingId(null);
-        fetchLocations();
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to update location boundary");
-      }
+      setSuccess("Location boundary berhasil diupdate");
+      setEditingId(null);
+      fetchLocations();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to update location boundary");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -208,28 +200,19 @@ const LocationBoundaries: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/location-boundaries/${locationId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          is_active: !currentStatus,
-        }),
+      await locationService.update(locationId, {
+        is_active: !currentStatus,
       });
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
-
-      if (response.ok && result.success) {
-        setSuccess(`Location ${!currentStatus ? "diaktifkan" : "dinonaktifkan"}`);
-        fetchLocations();
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to toggle location status");
-      }
+      setSuccess(`Location ${!currentStatus ? "diaktifkan" : "dinonaktifkan"}`);
+      fetchLocations();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to toggle location status");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -243,22 +226,17 @@ const LocationBoundaries: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/location-boundaries/${locationId}`, {
-        method: "DELETE",
-      });
+      await locationService.delete(locationId);
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
-
-      if (response.ok && result.success) {
-        setSuccess("Location boundary berhasil dihapus");
-        fetchLocations();
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to delete location boundary");
-      }
+      setSuccess("Location boundary berhasil dihapus");
+      fetchLocations();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to delete location boundary");
+      }
     } finally {
       setIsLoading(false);
     }

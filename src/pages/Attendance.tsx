@@ -1,5 +1,7 @@
 import { type Component, For, createSignal, onMount } from "solid-js";
 import { Download, Search, Calendar, RefreshCw } from "lucide-solid";
+import { attendanceService } from "../services/attendanceService";
+import { ApiError } from "../utils/apiClient";
 
 interface AttendanceLog {
   id: string;
@@ -17,31 +19,27 @@ const Attendance: Component = () => {
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
-  const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080/api";
-
   const fetchAttendance = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${BASE_URL}/attendance/logs`);
-      const result = await response.json();
-
-      if (response.ok && result.status === "success") {
-        const mappedData = result.data.map((item: any) => ({
-          ...item,
-          id: item.id?.id?.String || item.id?.id || item.id,
-          employee_id:
-            item.employee_id?.id?.String ||
-            item.employee_id?.id ||
-            item.employee_id ||
-            "Unknown",
-        }));
-        setLogs(mappedData);
-      } else {
-        setError(result.message || "Failed to fetch attendance logs");
-      }
+      const data = await attendanceService.getLogs();
+      const mappedData = data.map((item: any) => ({
+        ...item,
+        id: item.id?.id?.String || item.id?.id || item.id,
+        employee_id:
+          item.employee_id?.id?.String ||
+          item.employee_id?.id ||
+          item.employee_id ||
+          "Unknown",
+      }));
+      setLogs(mappedData);
     } catch (err: any) {
-      setError(err.message || "Network error. Is the backend running?");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to fetch attendance logs");
+      }
     } finally {
       setIsLoading(false);
     }

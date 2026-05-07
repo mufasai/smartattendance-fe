@@ -11,6 +11,8 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-solid";
+import { wifiService } from "../services/wifiService";
+import { ApiError } from "../utils/apiClient";
 
 interface WiFiSetting {
   id: string;
@@ -41,26 +43,22 @@ const WiFiManagement: Component = () => {
     is_active: true,
   });
 
-  const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080/api";
-
   const fetchWiFiSettings = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${BASE_URL}/wifi-settings/all`);
-      const text = await response.text();
-      if (text) {
-        const result = JSON.parse(text);
-        if (result.success) {
-          const mappedData = result.data.map((item: any) => ({
-            ...item,
-            id: item.id?.id?.String || item.id?.id || item.id,
-          }));
-          setWifiSettings(mappedData);
-        }
-      }
+      const data = await wifiService.getAll();
+      const mappedData = data.map((item: any) => ({
+        ...item,
+        id: item.id?.id?.String || item.id?.id || item.id,
+      }));
+      setWifiSettings(mappedData);
     } catch (err: any) {
-      setError(err.message || "Failed to fetch WiFi settings");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to fetch WiFi settings");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -82,26 +80,22 @@ const WiFiManagement: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/wifi-settings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+      await wifiService.create({
+        ssid: data.ssid.trim(),
+        bssid: data.ssid.trim(),
       });
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { success: false };
-
-      if (response.ok && result.success) {
-        setSuccess("WiFi setting created successfully");
-        setShowAddModal(false);
-        resetForm();
-        fetchWiFiSettings();
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to create WiFi setting");
-      }
+      setSuccess("WiFi setting created successfully");
+      setShowAddModal(false);
+      resetForm();
+      fetchWiFiSettings();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to create WiFi setting");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -117,26 +111,21 @@ const WiFiManagement: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/wifi-settings/${wifi.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+      await wifiService.update(wifi.id, {
+        ssid: data.ssid.trim(),
       });
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { success: false };
-
-      if (response.ok && result.success) {
-        setSuccess("WiFi setting updated successfully");
-        setShowEditModal(false);
-        setEditingWiFi(null);
-        fetchWiFiSettings();
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to update WiFi setting");
-      }
+      setSuccess("WiFi setting updated successfully");
+      setShowEditModal(false);
+      setEditingWiFi(null);
+      fetchWiFiSettings();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to update WiFi setting");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -150,22 +139,17 @@ const WiFiManagement: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/wifi-settings/${id}`, {
-        method: "DELETE",
-      });
+      await wifiService.delete(id);
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { success: false };
-
-      if (response.ok && result.success) {
-        setSuccess("WiFi setting deleted successfully");
-        fetchWiFiSettings();
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to delete WiFi setting");
-      }
+      setSuccess("WiFi setting deleted successfully");
+      fetchWiFiSettings();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to delete WiFi setting");
+      }
     } finally {
       setIsLoading(false);
     }

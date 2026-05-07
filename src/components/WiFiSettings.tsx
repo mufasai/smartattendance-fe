@@ -12,6 +12,8 @@ import {
   Edit,
   Save,
 } from "lucide-solid";
+import { wifiService } from "../services/wifiService";
+import { ApiError } from "../utils/apiClient";
 
 interface WiFiSetting {
   id: string;
@@ -45,18 +47,26 @@ const WiFiManagement: Component = () => {
     is_active: true,
   });
 
-  const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8080/api";
-
   const fetchWiFiSettings = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${BASE_URL}/wifi-settings/all`);
-      
-      if (!response.ok) {
-        setError(`Server error: ${response.status} ${response.statusText}`);
-        return;
+      const data = await wifiService.getAll();
+      const mappedData = data.map((item: any) => ({
+        ...item,
+        id: item.id?.id?.String || item.id?.id || item.id,
+      }));
+      setWifiList(mappedData);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to fetch WiFi settings");
       }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
       const text = await response.text();
       if (!text) {
@@ -98,32 +108,22 @@ const WiFiManagement: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/wifi-settings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ssid: data.ssid.trim(),
-          description: data.description.trim(),
-          is_active: data.is_active,
-        }),
+      await wifiService.create({
+        ssid: data.ssid.trim(),
+        bssid: data.ssid.trim(), // Using SSID as BSSID for now
       });
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
-
-      if (response.ok && result.success) {
-        setSuccess("WiFi berhasil ditambahkan");
-        setShowAddModal(false);
-        resetForm();
-        fetchWiFiSettings();
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to create WiFi setting");
-      }
+      setSuccess("WiFi berhasil ditambahkan");
+      setShowAddModal(false);
+      resetForm();
+      fetchWiFiSettings();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to create WiFi setting");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -136,30 +136,20 @@ const WiFiManagement: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/wifi-settings/${wifiId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          description: data.description.trim(),
-          is_active: data.is_active,
-        }),
+      await wifiService.update(wifiId, {
+        ssid: data.description.trim(), // Using description as SSID update
       });
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
-
-      if (response.ok && result.success) {
-        setSuccess("WiFi berhasil diupdate");
-        setEditingId(null);
-        fetchWiFiSettings();
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to update WiFi setting");
-      }
+      setSuccess("WiFi berhasil diupdate");
+      setEditingId(null);
+      fetchWiFiSettings();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to update WiFi setting");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -171,28 +161,17 @@ const WiFiManagement: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/wifi-settings/${wifiId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          is_active: !currentStatus,
-        }),
-      });
+      await wifiService.toggleActive(wifiId);
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
-
-      if (response.ok && result.success) {
-        setSuccess(`WiFi ${!currentStatus ? "diaktifkan" : "dinonaktifkan"}`);
-        fetchWiFiSettings();
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to toggle WiFi status");
-      }
+      setSuccess(`WiFi ${!currentStatus ? "diaktifkan" : "dinonaktifkan"}`);
+      fetchWiFiSettings();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to toggle WiFi status");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -206,22 +185,17 @@ const WiFiManagement: Component = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${BASE_URL}/wifi-settings/${wifiId}`, {
-        method: "DELETE",
-      });
+      await wifiService.delete(wifiId);
 
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : { success: false, message: "Empty response" };
-
-      if (response.ok && result.success) {
-        setSuccess("WiFi berhasil dihapus");
-        fetchWiFiSettings();
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || "Failed to delete WiFi setting");
-      }
+      setSuccess("WiFi berhasil dihapus");
+      fetchWiFiSettings();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(err.message || "Failed to delete WiFi setting");
+      }
     } finally {
       setIsLoading(false);
     }
