@@ -84,7 +84,7 @@ const MapPicker: Component<{
       if (isMounted && map) {
         try {
           map.invalidateSize();
-        } catch (e) {}
+        } catch (e) { }
       }
     }, 100);
 
@@ -116,7 +116,7 @@ const MapPicker: Component<{
         if (active && map) {
           try {
             map.invalidateSize();
-          } catch (e) {}
+          } catch (e) { }
         }
       }, 300);
     }
@@ -128,8 +128,8 @@ const MapPicker: Component<{
   return (
     <div class={`transition-all duration-300 ${isFullscreen() ? "fixed inset-4 sm:inset-12 z-[9999] bg-gray-50 rounded-2xl shadow-2xl p-2 flex flex-col border border-gray-300" : "relative w-full h-64 sm:h-80"}`}>
       <div ref={mapContainer} class={`w-full h-full rounded-xl border border-[var(--color-border)] z-10 shadow-inner ${isFullscreen() ? "flex-1" : ""}`} />
-      
-      <button 
+
+      <button
         type="button"
         onClick={(e) => {
           e.preventDefault();
@@ -138,7 +138,7 @@ const MapPicker: Component<{
         class="absolute top-4 right-4 z-[1000] bg-white p-2.5 rounded-xl shadow-md border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
         title={isFullscreen() ? "Exit full screen" : "Full screen map"}
       >
-        {isFullscreen() ? <Minimize class="w-5 h-5"/> : <Maximize class="w-5 h-5"/>}
+        {isFullscreen() ? <Minimize class="w-5 h-5" /> : <Maximize class="w-5 h-5" />}
       </button>
 
       {isFullscreen() && (
@@ -273,11 +273,9 @@ const LocationManagement: Component = () => {
     try {
       await locationService.create({
         name: data.name.trim(),
-        description: data.description.trim(),
         latitude: data.latitude,
         longitude: data.longitude,
         radius: data.radius,
-        is_active: data.is_active,
       });
 
       setSuccess("Location boundary created successfully");
@@ -305,11 +303,9 @@ const LocationManagement: Component = () => {
     try {
       await locationService.update(locationId, {
         name: data.name.trim(),
-        description: data.description.trim(),
         latitude: data.latitude,
         longitude: data.longitude,
         radius: data.radius,
-        is_active: data.is_active,
       });
 
       setSuccess("Location boundary updated successfully");
@@ -333,9 +329,7 @@ const LocationManagement: Component = () => {
     setSuccess(null);
 
     try {
-      await locationService.update(locationId, {
-        is_active: !currentStatus,
-      });
+      await locationService.toggleActive(locationId);
 
       setSuccess(`Location ${!currentStatus ? "activated" : "deactivated"}`);
       fetchLocations();
@@ -658,11 +652,10 @@ const LocationManagement: Component = () => {
                     <div class="flex gap-2">
                       <button
                         onClick={() => toggleLocationStatus(location.id, location.is_active)}
-                        class={`flex-1 flex items-center justify-center gap-1 text-xs px-3 py-2 rounded-lg transition-colors font-medium ${
-                          location.is_active
-                            ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
-                            : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
-                        }`}
+                        class={`flex-1 flex items-center justify-center gap-1 text-xs px-3 py-2 rounded-lg transition-colors font-medium ${location.is_active
+                          ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+                          : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
+                          }`}
                       >
                         {location.is_active ? "Disable" : "Enable"}
                       </button>

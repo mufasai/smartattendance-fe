@@ -57,36 +57,13 @@ const WiFiManagement: Component = () => {
         id: item.id?.id?.String || item.id?.id || item.id,
       }));
       setWifiList(mappedData);
-    } catch (err: any) {
-      if (err instanceof ApiError) {
-        setError(err.message);
+    } catch (err) {
+      const error = err as any;
+      if (error instanceof ApiError) {
+        setError(error.message);
       } else {
-        setError(err.message || "Failed to fetch WiFi settings");
+        setError(error.message || "Failed to fetch WiFi settings");
       }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-      const text = await response.text();
-      if (!text) {
-        setError("Empty response from server");
-        return;
-      }
-
-      const result = JSON.parse(text);
-
-      if (result.success) {
-        const mappedData = result.data.map((item: any) => ({
-          ...item,
-          id: item.id?.id?.String || item.id?.id || item.id,
-        }));
-        setWifiList(mappedData);
-      } else {
-        setError(result.message || "Failed to fetch WiFi settings");
-      }
-    } catch (err: any) {
-      setError(err.message || "Network error. Is the backend running?");
     } finally {
       setIsLoading(false);
     }
@@ -118,11 +95,12 @@ const WiFiManagement: Component = () => {
       resetForm();
       fetchWiFiSettings();
       setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      if (err instanceof ApiError) {
-        setError(err.message);
+    } catch (err) {
+      const error = err as any;
+      if (error instanceof ApiError) {
+        setError(error.message);
       } else {
-        setError(err.message || "Failed to create WiFi setting");
+        setError(error.message || "Failed to create WiFi setting");
       }
     } finally {
       setIsLoading(false);
@@ -144,11 +122,12 @@ const WiFiManagement: Component = () => {
       setEditingId(null);
       fetchWiFiSettings();
       setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      if (err instanceof ApiError) {
-        setError(err.message);
+    } catch (err) {
+      const error = err as any;
+      if (error instanceof ApiError) {
+        setError(error.message);
       } else {
-        setError(err.message || "Failed to update WiFi setting");
+        setError(error.message || "Failed to update WiFi setting");
       }
     } finally {
       setIsLoading(false);
@@ -166,11 +145,12 @@ const WiFiManagement: Component = () => {
       setSuccess(`WiFi ${!currentStatus ? "diaktifkan" : "dinonaktifkan"}`);
       fetchWiFiSettings();
       setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      if (err instanceof ApiError) {
-        setError(err.message);
+    } catch (err) {
+      const error = err as any;
+      if (error instanceof ApiError) {
+        setError(error.message);
       } else {
-        setError(err.message || "Failed to toggle WiFi status");
+        setError(error.message || "Failed to toggle WiFi status");
       }
     } finally {
       setIsLoading(false);
@@ -190,11 +170,12 @@ const WiFiManagement: Component = () => {
       setSuccess("WiFi berhasil dihapus");
       fetchWiFiSettings();
       setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      if (err instanceof ApiError) {
-        setError(err.message);
+    } catch (err) {
+      const error = err as any;
+      if (error instanceof ApiError) {
+        setError(error.message);
       } else {
-        setError(err.message || "Failed to delete WiFi setting");
+        setError(error.message || "Failed to delete WiFi setting");
       }
     } finally {
       setIsLoading(false);
@@ -415,10 +396,10 @@ const WiFiManagement: Component = () => {
                       <td class="px-6 py-4 text-sm text-[var(--color-text-secondary)]">
                         {wifi.created_at
                           ? new Date(wifi.created_at).toLocaleDateString("id-ID", {
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                            })
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          })
                           : "-"}
                       </td>
                       <td class="px-6 py-4">
@@ -453,11 +434,10 @@ const WiFiManagement: Component = () => {
                               <button
                                 onClick={() => toggleWiFiStatus(wifi.id, wifi.is_active)}
                                 disabled={isLoading()}
-                                class={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg transition-colors font-medium disabled:opacity-50 ${
-                                  wifi.is_active
-                                    ? "bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100"
-                                    : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
-                                }`}
+                                class={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg transition-colors font-medium disabled:opacity-50 ${wifi.is_active
+                                  ? "bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100"
+                                  : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
+                                  }`}
                               >
                                 {wifi.is_active ? (
                                   <>

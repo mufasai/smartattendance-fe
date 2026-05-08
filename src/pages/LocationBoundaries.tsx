@@ -67,36 +67,13 @@ const LocationBoundaries: Component = () => {
         id: item.id?.id?.String || item.id?.id || item.id,
       }));
       setLocations(mappedData);
-    } catch (err: any) {
-      if (err instanceof ApiError) {
-        setError(err.message);
+    } catch (err) {
+      const error = err as any;
+      if (error instanceof ApiError) {
+        setError(error.message);
       } else {
-        setError(err.message || "Failed to fetch location boundaries");
+        setError(error.message || "Failed to fetch location boundaries");
       }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-      const text = await response.text();
-      if (!text) {
-        setError("Empty response from server");
-        return;
-      }
-
-      const result = JSON.parse(text);
-
-      if (result.success) {
-        const mappedData = result.data.map((item: any) => ({
-          ...item,
-          id: item.id?.id?.String || item.id?.id || item.id,
-        }));
-        setLocations(mappedData);
-      } else {
-        setError(result.message || "Failed to fetch location boundaries");
-      }
-    } catch (err: any) {
-      setError(err.message || "Network error. Is the backend running?");
     } finally {
       setIsLoading(false);
     }
@@ -140,11 +117,9 @@ const LocationBoundaries: Component = () => {
     try {
       await locationService.create({
         name: data.name.trim(),
-        description: data.description.trim(),
         latitude: data.latitude,
         longitude: data.longitude,
         radius: data.radius,
-        is_active: data.is_active,
       });
 
       setSuccess("Location boundary berhasil ditambahkan");
@@ -152,11 +127,12 @@ const LocationBoundaries: Component = () => {
       resetForm();
       fetchLocations();
       setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
+    } catch (err) {
+      const error = err as any;
       if (err instanceof ApiError) {
-        setError(err.message);
+        setError(error.message);
       } else {
-        setError(err.message || "Failed to create location boundary");
+        setError(error.message || "Failed to create location boundary");
       }
     } finally {
       setIsLoading(false);
@@ -172,22 +148,21 @@ const LocationBoundaries: Component = () => {
     try {
       await locationService.update(locationId, {
         name: data.name.trim(),
-        description: data.description.trim(),
         latitude: data.latitude,
         longitude: data.longitude,
         radius: data.radius,
-        is_active: data.is_active,
       });
 
       setSuccess("Location boundary berhasil diupdate");
       setEditingId(null);
       fetchLocations();
       setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
+    } catch (err) {
+      const error = err as any;
       if (err instanceof ApiError) {
-        setError(err.message);
+        setError(error.message);
       } else {
-        setError(err.message || "Failed to update location boundary");
+        setError(error.message || "Failed to update location boundary");
       }
     } finally {
       setIsLoading(false);
@@ -200,18 +175,17 @@ const LocationBoundaries: Component = () => {
     setSuccess(null);
 
     try {
-      await locationService.update(locationId, {
-        is_active: !currentStatus,
-      });
+      await locationService.toggleActive(locationId);
 
       setSuccess(`Location ${!currentStatus ? "diaktifkan" : "dinonaktifkan"}`);
       fetchLocations();
       setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
+    } catch (err) {
+      const error = err as any;
       if (err instanceof ApiError) {
-        setError(err.message);
+        setError(error.message);
       } else {
-        setError(err.message || "Failed to toggle location status");
+        setError(error.message || "Failed to toggle location status");
       }
     } finally {
       setIsLoading(false);
@@ -231,11 +205,12 @@ const LocationBoundaries: Component = () => {
       setSuccess("Location boundary berhasil dihapus");
       fetchLocations();
       setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
+    } catch (err) {
+      const error = err as any;
       if (err instanceof ApiError) {
-        setError(err.message);
+        setError(error.message);
       } else {
-        setError(err.message || "Failed to delete location boundary");
+        setError(error.message || "Failed to delete location boundary");
       }
     } finally {
       setIsLoading(false);
@@ -521,11 +496,10 @@ const LocationBoundaries: Component = () => {
                     <div class="flex gap-2">
                       <button
                         onClick={() => toggleLocationStatus(location.id, location.is_active)}
-                        class={`flex-1 flex items-center justify-center gap-1 text-xs px-3 py-2 rounded-lg transition-colors font-medium ${
-                          location.is_active
-                            ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
-                            : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
-                        }`}
+                        class={`flex-1 flex items-center justify-center gap-1 text-xs px-3 py-2 rounded-lg transition-colors font-medium ${location.is_active
+                          ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+                          : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
+                          }`}
                       >
                         {location.is_active ? "Disable" : "Enable"}
                       </button>
